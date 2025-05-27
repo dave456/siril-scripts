@@ -1,0 +1,12 @@
+{
+    "python.defaultInterpreterPath": "C:/Program Files/Siril/python/python.exe",
+    "python.analysis.extraPaths": [
+        "C:/Program Files/Siril/python/Lib/site-packages",
+        "C:/Program Files/Siril/python/Lib",
+        "C:/Program Files/Siril/share",
+        "C:/Program Files/Siril/share/siril/python_module"
+    ],
+    "files.associations": {
+        "*.ssf": "shellscript"
+    }
+}

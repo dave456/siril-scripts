@@ -1,0 +1,32 @@
+#
+# Stack with our preferred options
+# Assumes flat_stacked and dark_stacked have already been created in masters
+#
+
+requires 1.3.4
+
+#
+# Convert Light Frames
+#
+# This is kind of a lie, it doesn't really convert anything, it creates symlinks
+# in the process directory of the original lights, and then creates a sequence file
+# of all of those light files
+#
+cd lights
+convert light -out=../process
+cd ../process
+
+# compute stats on lights and save
+seqstat light ../stats.csv
+
+# Calibrate Light Frames using debayer
+calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=dark -cfa -equalize_cfa -debayer
+
+# Align lights with Drizzle
+register pp_light
+
+# Stack calibrated lights to result.fits
+stack r_pp_light rej 3 3 -norm=addscale -output_norm -rgb_equal -32b -out=../result
+
+cd ..
+load result

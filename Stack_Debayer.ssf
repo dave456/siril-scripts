@@ -8,9 +8,8 @@ requires 1.3.4
 #
 # Convert Light Frames
 #
-# This is kind of a lie, it doesn't really convert anything, it creates symlinks
-# in the process directory of the original lights, and then creates a sequence file
-# of all of those light files
+# For fits files, this simply creates symlinks in the process directory and
+# generates a sequence file of all the light files.
 #
 cd lights
 convert light -out=../process
@@ -19,10 +18,10 @@ cd ../process
 # compute stats on lights and save
 seqstat light ../stats.csv
 
-# Calibrate Light Frames using debayer
+# calibrate Light Frames with darks and debayer
 calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=dark -cfa -equalize_cfa -debayer
 
-# Align lights with Drizzle
+# Align lights
 register pp_light
 
 # Stack calibrated lights to result.fits

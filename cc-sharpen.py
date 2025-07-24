@@ -248,7 +248,7 @@ class SirilCosmicClarityInterface:
             if self.sharpen_channels_var.get():
                 command.append("--sharpen_channels_separately")
 
-            print(f"Running command: {' '.join(command)}")
+            #print(f"Running command: {' '.join(command)}")
 
             process = await asyncio.create_subprocess_exec(
                 *command,

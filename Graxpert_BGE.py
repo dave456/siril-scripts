@@ -1,6 +1,7 @@
 import sirilpy as s
 s.ensure_installed("ttkthemes")
 s.ensure_installed("astropy")
+s.ensure_installed("numpy")
 
 import os
 import sys
@@ -12,6 +13,7 @@ from tkinter import ttk
 from ttkthemes import ThemedTk # type: ignore
 from sirilpy import tksiril
 from astropy.io import fits # type: ignore
+import numpy as np # type: ignore
 
 graxpertTemp = "graxpert-temp.fits"
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
@@ -115,21 +117,21 @@ class SirilBackgrounExtractInterface:
             
     def OnApply(self):
         """Callback for the Apply button."""
-        self.root.after(0, self.run_async_task)
+        self.root.after(0, self.RunApplyChanges)
 
-    def run_async_task(self):
+    def RunApplyChanges(self):
         """Run the async task to apply changes."""
         asyncio.run(self.ApplyChanges())
 
     def OnClose(self):
         """Callback for the Close button."""
+        self.siril.disconnect()
         self.root.quit()
         self.root.destroy()
 
     def update_gradient_smoothing(self, *args):
-        """Update gradient smoothing value."""
-        value = self.gradient_smoothing_var.get()
-        self.gradient_smoothing_var.set(f"{value:.2f}")
+        """Update gradient smoothing value to two decimal places."""
+        self.gradient_smoothing_var.set(f"{self.gradient_smoothing_var.get():.2f}")
 
     async def ApplyChanges(self):
         try:
@@ -139,7 +141,7 @@ class SirilBackgrounExtractInterface:
                 curfilename = self.siril.get_image_filename()
                 basename = os.path.basename(curfilename)
                 directory = os.path.dirname(curfilename)
-                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-bge")
+                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-bge-temp")
                 outputFile = outputFileNoSuffix + ".fits"
 
                 # Check if the temporary file exists and remove it                
@@ -163,11 +165,20 @@ class SirilBackgrounExtractInterface:
                 # Run GraXpert
                 print("Running background extraction...")
                 result = subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
+                #print(result)
                 print("Background extraction completed.")
-                AddHistory(outputFile, f"GraXpert AI background extraction applied with smoothing {self.gradient_smoothing_var.get():.2f}")
+
+                # load the resulting image and set it in Siril
+                with fits.open(os.path.basename(outputFile)) as hdul:
+                    data = hdul[0].data
+                    if data.dtype != np.float32:
+                        data = np.array(data, dtype=np.float32)
+                    self.siril.undo_save_state(f"GraXpert AI background extraction smoothing {self.gradient_smoothing_var.get():.2f}")
+                    self.siril.set_image_pixeldata(data)
                 
-                # Load the new image in Siril
-                self.siril.cmd("load", outputFile)
+                # Load the new image in Siril (was doing it this way before, maybe add an option later?)
+                #AddHistory(outputFile, f"GraXpert AI background extraction applied with smoothing {self.gradient_smoothing_var.get():.2f}")
+                #self.siril.cmd("load", outputFile)
 
         except Exception as e:
             print(f"Error in apply_changes: {str(e)}")
@@ -177,6 +188,8 @@ class SirilBackgrounExtractInterface:
             # Clean up temporary file
             if os.path.exists(graxpertTemp):
                 os.remove(graxpertTemp)
+            if os.path.exists(outputFile):
+                os.remove(outputFile)
             self.siril.disconnect()
             self.root.quit()
             self.root.destroy()

@@ -1,13 +1,15 @@
 import sirilpy
 sirilpy.ensure_installed("ttkthemes")
 sirilpy.ensure_installed("astropy")
+sirilpy.ensure_installed("numpy")
+
 
 import os
 import sys
-import math
 import asyncio
 import subprocess
 from astropy.io import fits # type: ignore
+import numpy as np # type: ignore
 
 import tkinter as tk
 from tkinter import ttk
@@ -50,21 +52,7 @@ class SirilDenoiseInterface:
         tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
-    def truncate(self, value, precision=2):
-            """Truncate a value to the specified number of decimal places.
 
-            Args:
-                value (float): The value to truncate.
-                precision (int): The number of decimal places to truncate to. Default is 2.
-            """
-            factor = 10 ** precision
-            return math.floor(value * factor) / factor
-
-    def update_denoise_strength_display(self, *args):
-            """Update the strength value in the slider widget"""
-            value = self.denoise_strength_var.get()
-            rounded_value = self.truncate(value)
-            self.denoise_strength_var.set(f"{rounded_value:.2f}")
 
     def create_widgets(self):
             """Creates the GUI widgets for the GraXpert Denoise interface."""
@@ -99,7 +87,7 @@ class SirilDenoiseInterface:
             ).pack(side=tk.LEFT)
 
             # Add trace to update display when slider changes
-            self.denoise_strength_var.trace_add("write", self.update_denoise_strength_display)        
+            self.denoise_strength_var.trace_add("write", self.update_denoise_strength)        
         
             # Action Buttons
             button_frame = ttk.Frame(main_frame)
@@ -121,16 +109,21 @@ class SirilDenoiseInterface:
             )
             apply_btn.pack(side=tk.LEFT, padx=5)
 
-    def OnApply(self):
-        """Callback for the Apply button."""
-        self.root.after(0, self._run_async_task)
+    def update_denoise_strength(self, *args):
+            """Update the strength value in the slider widget to two decimal places."""
+            self.denoise_strength_var.set(f"{self.denoise_strength_var.get():.2f}")
 
     def OnClose(self):
         """Callback for the Close button."""
+        self.siril.disconnect()
         self.root.quit()
         self.root.destroy()
+    
+    def OnApply(self):
+        """Callback for the Apply button."""
+        self.root.after(0, self.RunApplyChanges)
 
-    def _run_async_task(self):
+    def RunApplyChanges(self):
         """Run Apply changes asynchronously."""
         asyncio.run(self.ApplyChanges())
 
@@ -145,15 +138,13 @@ class SirilDenoiseInterface:
                 
                 # Read user input values
                 denoise_strength = self.denoise_strength_var.get()
-                #print(f"Denoise strength: {denoise_strength}")
 
                 # get the current image filename and construct our new output filename
                 curfilename = self.siril.get_image_filename()
                 basename = os.path.basename(curfilename)
                 directory = os.path.dirname(curfilename)
-                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-nr")
+                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-grax_nr-temp")
                 outputFile = outputFileNoSuffix + ".fits"
-                #print(f"Output file will be: {outputFileNoSuffix}")
 
                 # save the current image to a temporary fits file and move to input directory
                 if os.path.exists(graxpertTemp):
@@ -162,7 +153,6 @@ class SirilDenoiseInterface:
 
                 # Call graxpert.exe to run denoise, graxpert will add the .fits suffix
                 args = [graxpertTemp, "-cli", "-cmd", "denoising", "-strength", str(denoise_strength), "-output", outputFileNoSuffix]
-                #print(f"Running GraXpert with arguments: {args}")
 
                 # see if the output file already exists - remove it if it does
                 if os.path.exists(outputFile):
@@ -171,14 +161,20 @@ class SirilDenoiseInterface:
 
                 # run graxpert
                 print("Running GraXpert denoise...")
-                self.siril.update_progress("Graxpert Denoise running...", 0.10)
                 result = subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
+                print(result)
                 print("GraXpert denoise completed.")
 
-                AddHistory(outputFile, f"GraXpert Denoise applied with strength {denoise_strength:.2f}")
+                with fits.open(os.path.basename(outputFile)) as hdul:
+                    data = hdul[0].data
+                    if data.dtype != np.float32:
+                        data = np.array(data, dtype=np.float32)
+                    self.siril.undo_save_state(f"GraXpert Denoise applied with strength {denoise_strength:.2f}")
+                    self.siril.set_image_pixeldata(data)
 
-                # load up the file on success and get out of dodge
-                self.siril.cmd("load", os.path.basename(outputFile))
+                # Load the new image in Siril (was doing it this way before, maybe add an option later?)
+                #AddHistory(outputFile, f"GraXpert Denoise applied with strength {denoise_strength:.2f}")
+                #self.siril.cmd("load", os.path.basename(outputFile))
                 
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running GraXpert: {e}")
@@ -189,7 +185,9 @@ class SirilDenoiseInterface:
         finally:
             if os.path.exists(graxpertTemp):
                 os.remove(graxpertTemp)
-            self.siril.reset_progress()
+            if os.path.exists(outputFile):
+                os.remove(outputFile)
+            self.siril.disconnect()
             self.root.quit()
             self.root.destroy()
 

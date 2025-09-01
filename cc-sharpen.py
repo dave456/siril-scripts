@@ -2,6 +2,7 @@
 import sirilpy as s
 s.ensure_installed("ttkthemes")
 s.ensure_installed("astropy")
+s.ensure_installed("numpy")
 
 import os
 import re
@@ -10,6 +11,7 @@ import math
 import asyncio
 import subprocess
 from astropy.io import fits # type: ignore
+import numpy as np # type: ignore
 
 import tkinter as tk
 from tkinter import ttk
@@ -23,10 +25,10 @@ sharpenExecutable = "C:/CosmicClarity/setiastrocosmicclarity.exe"
 
 class SirilCosmicClarityInterface:
     def __init__(self, root):
+        """Constructor for SirilCosmicClarityInterface class"""
         self.root = root
         self.root.title(f"Cosmic Clarity Sharpening")
         self.root.resizable(False, False)
-
         self.style = tksiril.standard_style()
 
         # Initialize Siril connection
@@ -55,30 +57,17 @@ class SirilCosmicClarityInterface:
         # Create widgets
         self.create_widgets()
 
-    def truncate(self, value, precision=2):
-            """Truncate a value to the specified number of decimal places.
-
-            Args:
-                value (float): The value to truncate.
-                precision (int): The number of decimal places to truncate to. Default is 2.
-            """
-            factor = 10 ** precision
-            return math.floor(value * factor) / factor
-
     def update_stellar_amount_display(self, *args):
         value = self.stellar_amount_var.get()
-        rounded_value = self.truncate(value)
-        self.stellar_amount_var.set(f"{rounded_value:.2f}")
+        self.stellar_amount_var.set(f"{value:.2f}")
 
     def update_non_stellar_amount_display(self, *args):
         value = self.non_stellar_amount_var.get()
-        rounded_value = self.truncate(value)
-        self.non_stellar_amount_var.set(f"{rounded_value:.2f}")
+        self.non_stellar_amount_var.set(f"{value:.2f}")
 
     def update_non_stellar_psf_display(self, *args):
         value = self.non_stellar_psf_var.get()
-        rounded_value = self.truncate(value)
-        self.non_stellar_psf_var.set(f"{rounded_value:.1f}")
+        self.non_stellar_psf_var.set(f"{value:.1f}")
 
     def create_widgets(self):
         """Create the main dialog widgets."""
@@ -87,14 +76,14 @@ class SirilCosmicClarityInterface:
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Sharpening Mode Frame
-        strength_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
-        strength_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Options Mode Frame
+        options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
+        options_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # GPU Checkbox
         self.use_gpu_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            strength_frame,
+            options_frame,
             text="Use GPU",
             variable=self.use_gpu_var,
             style="TCheckbutton"
@@ -103,12 +92,21 @@ class SirilCosmicClarityInterface:
         # Sharpen channels separately Checkbox
         self.sharpen_channels_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            strength_frame,
+            options_frame,
             text="Sharpen channels separately",
             variable=self.sharpen_channels_var,
             style="TCheckbutton"
         ).pack(anchor=tk.W, pady=2)
 
+        # Use automatic PSF Checkbox
+        self.use_auto_psf_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            options_frame,
+            text="Use automatic PSF",
+            variable=self.use_auto_psf_var,
+            style="TCheckbutton",
+        ).pack(anchor=tk.W, pady=2)
+    
         # Sharpening Mode Frame
         mode_frame = ttk.LabelFrame(main_frame, text="Sharpening Mode", padding=10)
         mode_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -127,14 +125,14 @@ class SirilCosmicClarityInterface:
         strength_frame = ttk.LabelFrame(main_frame, text="Strength", padding=10)
         strength_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        # Non-Stellar PSF
-        non_stellar_psf_frame = ttk.Frame(strength_frame)
-        non_stellar_psf_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_psf_frame, text="Non-Stellar PSF:").pack(side=tk.LEFT)
+        # Non-Stellar Strength
+        non_stellar_str_frame = ttk.Frame(strength_frame)
+        non_stellar_str_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(non_stellar_str_frame, text="  Non-Stellar Strength:").pack(side=tk.LEFT)
 
-        self.non_stellar_psf_var = tk.DoubleVar(value="3.0")
+        self.non_stellar_psf_var = tk.DoubleVar(value=3.1)
         non_stellar_psf_scale = ttk.Scale(
-            non_stellar_psf_frame,
+            non_stellar_str_frame,
             from_=1.0,
             to=8.0,
             orient=tk.HORIZONTAL,
@@ -143,44 +141,18 @@ class SirilCosmicClarityInterface:
         )
         non_stellar_psf_scale.pack(side=tk.LEFT, padx=10, expand=True)
         ttk.Label(
-            non_stellar_psf_frame,
+            non_stellar_str_frame,
             textvariable=self.non_stellar_psf_var,
             width=5
         ).pack(side=tk.LEFT)
-
-        # set callback to update display when slider changes
         self.non_stellar_psf_var.trace_add("write", self.update_non_stellar_psf_display)
-
-        # Stellar Sharpening Amount
-        stellar_amount_frame = ttk.Frame(strength_frame)
-        stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(stellar_amount_frame, text="Stellar Sharpening:").pack(side=tk.LEFT)
-
-        self.stellar_amount_var = tk.DoubleVar(value=0.5)
-        stellar_amount_scale = ttk.Scale(
-            stellar_amount_frame,
-            from_=0.0,
-            to=1.0,
-            orient=tk.HORIZONTAL,
-            variable=self.stellar_amount_var,
-            length=200
-        )
-        stellar_amount_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        ttk.Label(
-            stellar_amount_frame,
-            textvariable=self.stellar_amount_var,
-            width=5
-        ).pack(side=tk.LEFT)
-
-        # Add trace to update display when slider changes
-        self.stellar_amount_var.trace_add("write", self.update_stellar_amount_display)
 
         # Non-Stellar Sharpening Amount
         non_stellar_amount_frame = ttk.Frame(strength_frame)
         non_stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_amount_frame, text="Non-Stellar Sharpening:").pack(side=tk.LEFT)
+        ttk.Label(non_stellar_amount_frame, text="  Non-Stellar Sharpening:").pack(side=tk.LEFT)
 
-        self.non_stellar_amount_var = tk.DoubleVar(value=0.5)
+        self.non_stellar_amount_var = tk.DoubleVar(value=0.80)
         non_stellar_strength_scale = ttk.Scale(
             non_stellar_amount_frame,
             from_=0.0,
@@ -195,9 +167,29 @@ class SirilCosmicClarityInterface:
             textvariable=self.non_stellar_amount_var,
             width=5
         ).pack(side=tk.LEFT)
-
-        # Add callback to update display when slider changes
         self.non_stellar_amount_var.trace_add("write", self.update_non_stellar_amount_display)
+
+        # Stellar Sharpening Amount
+        stellar_amount_frame = ttk.Frame(strength_frame)
+        stellar_amount_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(stellar_amount_frame, text="  Stellar Sharpening:").pack(side=tk.LEFT)
+
+        self.stellar_amount_var = tk.DoubleVar(value=0.50)
+        stellar_amount_scale = ttk.Scale(
+            stellar_amount_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            variable=self.stellar_amount_var,
+            length=200
+        )
+        stellar_amount_scale.pack(side=tk.LEFT, padx=10, expand=True)
+        ttk.Label(
+            stellar_amount_frame,
+            textvariable=self.stellar_amount_var,
+            width=5
+        ).pack(side=tk.LEFT)
+        self.stellar_amount_var.trace_add("write", self.update_stellar_amount_display)
 
         # Action Buttons
         button_frame = ttk.Frame(main_frame)
@@ -225,6 +217,7 @@ class SirilCosmicClarityInterface:
 
     def OnClose(self):
         """Handle close button click."""
+        self.siril.disconnect()
         self.root.quit()
         self.root.destroy()
 
@@ -248,7 +241,10 @@ class SirilCosmicClarityInterface:
             if self.sharpen_channels_var.get():
                 command.append("--sharpen_channels_separately")
 
-            #print(f"Running command: {' '.join(command)}")
+            if self.use_auto_psf_var.get():
+                command.append("--auto_detect_psf")
+
+            print(f"Running command: {' '.join(command)}")
 
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -313,7 +309,7 @@ class SirilCosmicClarityInterface:
                     curfilename = self.siril.get_image_filename()
                     basename = os.path.basename(curfilename)
                     directory = os.path.dirname(curfilename)
-                    outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-sharp.fits")
+                    outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-sharp-temp.fits")
 
                     # grab the sharpened result
                     if os.path.exists(os.path.join(cosmicClarityLocation, "output", sharpenResult)):
@@ -325,15 +321,14 @@ class SirilCosmicClarityInterface:
                             outputfilename
                         )
 
-                    # update the FITS header with the sharpening parameters
-                    AddHistory(os.path.basename(outputfilename), 
-                                f"Cosmic Clarity Sharpen: mode='{self.sharpening_mode_var.get()}', "
-                                f"stellar amount={self.stellar_amount_var.get()}, "
-                                f"non-stellar amount={self.non_stellar_amount_var.get()}, "
-                                f"non-stellar PSF={self.non_stellar_psf_var.get()}")
+                    # load the resulting image and set it in Siril
+                    with fits.open(outputfilename) as hdul:
+                        data = hdul[0].data
+                        if data.dtype != np.float32:
+                            data = np.array(data, dtype=np.float32)
+                        self.siril.undo_save_state(f"CC sharpening: mode='{self.sharpening_mode_var.get()}', stellar={self.stellar_amount_var.get()}, non-stellar={self.non_stellar_amount_var.get()}, str={self.non_stellar_psf_var.get()}")
+                        self.siril.set_image_pixeldata(data)
                     
-                    # load the image up in the GUI, and reset the status
-                    self.siril.cmd("load", os.path.basename(outputfilename))
                     self.siril.reset_progress()
                     self.siril.log("Seti Astro Cosmic Clarity Sharpening complete.")
 
@@ -346,6 +341,9 @@ class SirilCosmicClarityInterface:
                 os.remove(sharpenTemp)
             if os.path.exists(os.path.join(cosmicClarityLocation, "input", sharpenTemp)):
                 os.remove(os.path.join(cosmicClarityLocation, "input", sharpenTemp))
+            if os.path.exists(outputfilename):
+                os.remove(outputfilename)
+            self.siril.disconnect()
             self.root.quit()
             self.root.destroy()
 

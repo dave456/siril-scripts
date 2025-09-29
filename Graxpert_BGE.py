@@ -7,6 +7,7 @@ import os
 import sys
 import asyncio
 import subprocess
+import threading
 
 import tkinter as tk
 from tkinter import ttk
@@ -121,7 +122,7 @@ class SirilBackgrounExtractInterface:
 
     def RunApplyChanges(self):
         """Run the async task to apply changes."""
-        asyncio.run(self.ApplyChanges())
+        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     def OnClose(self):
         """Callback for the Close button."""
@@ -164,21 +165,19 @@ class SirilBackgrounExtractInterface:
 
                 # Run GraXpert
                 print("Running background extraction...")
-                result = subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
-                #print(result)
+                print(f"Command: {graxpertExecutable} {' '.join(args)}")
+                self.siril.update_progress("Graxpert background extraction running...", 0)
+                subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
                 print("Background extraction completed.")
 
                 # load the resulting image and set it in Siril
                 with fits.open(os.path.basename(outputFile)) as hdul:
+                    print("Loading result: " + os.path.basename(outputFile))
                     data = hdul[0].data
                     if data.dtype != np.float32:
                         data = np.array(data, dtype=np.float32)
-                    self.siril.undo_save_state(f"GraXpert AI background extraction smoothing {self.gradient_smoothing_var.get():.2f}")
+                    self.siril.undo_save_state(f"GraXpert background extraction smoothing={self.gradient_smoothing_var.get():.2f}")
                     self.siril.set_image_pixeldata(data)
-                
-                # Load the new image in Siril (was doing it this way before, maybe add an option later?)
-                #AddHistory(outputFile, f"GraXpert AI background extraction applied with smoothing {self.gradient_smoothing_var.get():.2f}")
-                #self.siril.cmd("load", outputFile)
 
         except Exception as e:
             print(f"Error in apply_changes: {str(e)}")
@@ -193,22 +192,6 @@ class SirilBackgrounExtractInterface:
             self.siril.disconnect()
             self.root.quit()
             self.root.destroy()
-
-def AddHistory(filename, history_text):
-    """Adds a history record to the header of a FITS file.
-
-    Args:
-        filename (str): Path to the FITS file.
-        history_text (str): The history text to add.
-    """
-    try:
-        with fits.open(filename, mode='update') as hdul:
-            hdul[0].header.add_history(history_text)
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-         print(f"An error occurred: {e}")
-
 
 def main():
     try:

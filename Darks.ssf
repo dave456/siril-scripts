@@ -3,14 +3,9 @@
 #
 requires 1.2.0
 
-convert dark -out=./process
-
+cd darks
+convert dark -out=../process
 
 # Stack Dark Frames to dark_stacked.fit
-cd process
-stack dark rej 3 3 -nonorm -out=../dark_stacked
-
-# compute stats on lights
-seqstat dark ../stats.csv
-
-cd ..
+cd ../process
+stack dark rej 3 3 -nonorm -out=../masters/dark_stacked

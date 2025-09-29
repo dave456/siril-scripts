@@ -1,7 +1,7 @@
 import sirilpy
 import os
 
-prefix = "session_"
+prefix = "session"
 base_path = "."
 
 def main():

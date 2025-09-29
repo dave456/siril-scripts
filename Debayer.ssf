@@ -24,8 +24,3 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 # Align lights
 register pp_light
 
-# Stack calibrated lights to result.fits
-stack r_pp_light rej 3 3 -norm=addscale -output_norm -rgb_equal -32b -out=../result
-
-cd ..
-load result

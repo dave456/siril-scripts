@@ -4,16 +4,12 @@
 
 requires 1.2.0
 
-convert flat -out=./process
+cd flats
+convert flat -out=../process
 
 # calibrate using our computed synthetic bias
-cd process
+cd ../process
 
-# calibrate flat -bias="=1888"
+# calibrate flat using synthetic bias
 calibrate flat -bias="=64*$OFFSET"
-stack pp_flat rej 3 3 -norm=mul -out=../flat_stacked
-
-# compute stats on lights
-seqstat flat ../stats.csv
-
-cd ..
+stack pp_flat rej 3 3 -norm=mul -out=../masters/flat_stacked

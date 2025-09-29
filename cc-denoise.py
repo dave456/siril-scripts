@@ -9,6 +9,7 @@ import re
 import sys
 import asyncio
 import subprocess
+import threading
 
 import tkinter as tk
 from tkinter import ttk
@@ -161,6 +162,7 @@ class SirilDenoiseInterface:
 
     def update_color_denoise_strength(self, *args):
         """Update color denoise strength value to two decimal places."""
+        # TODO: we should really disable the apply and close buttons here to prevent multiple clicks
         self.color_denoise_strength_var.set(f"{self.color_denoise_strength_var.get():.2f}")
 
     def OnClose(self):
@@ -174,8 +176,8 @@ class SirilDenoiseInterface:
         self.root.after(0, self.RunApplyChanges)
 
     def RunApplyChanges(self):
-        """Run the async task to apply changes."""
-        asyncio.run(self.ApplyChanges())
+        """Run Apply changes in a separate thread to avoid blocking the GUI."""
+        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def run_cosmic_clarity(self):
         """Run Cosmic Clarity denoise."""

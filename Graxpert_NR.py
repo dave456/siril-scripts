@@ -8,6 +8,7 @@ import os
 import sys
 import asyncio
 import subprocess
+import threading
 from astropy.io import fits # type: ignore
 import numpy as np # type: ignore
 
@@ -125,7 +126,7 @@ class SirilDenoiseInterface:
 
     def RunApplyChanges(self):
         """Run Apply changes asynchronously."""
-        asyncio.run(self.ApplyChanges())
+        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def ApplyChanges(self):
         """
@@ -161,20 +162,18 @@ class SirilDenoiseInterface:
 
                 # run graxpert
                 print("Running GraXpert denoise...")
+                print(f"Command: {graxpertExecutable} {' '.join(args)}")
+                self.siril.update_progress("GraXpert denoise running...", 0)
                 result = subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
-                print(result)
                 print("GraXpert denoise completed.")
 
+                # load image back into Siril
                 with fits.open(os.path.basename(outputFile)) as hdul:
                     data = hdul[0].data
                     if data.dtype != np.float32:
                         data = np.array(data, dtype=np.float32)
-                    self.siril.undo_save_state(f"GraXpert Denoise applied with strength {denoise_strength:.2f}")
+                    self.siril.undo_save_state(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}")
                     self.siril.set_image_pixeldata(data)
-
-                # Load the new image in Siril (was doing it this way before, maybe add an option later?)
-                #AddHistory(outputFile, f"GraXpert Denoise applied with strength {denoise_strength:.2f}")
-                #self.siril.cmd("load", os.path.basename(outputFile))
                 
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running GraXpert: {e}")
@@ -190,21 +189,6 @@ class SirilDenoiseInterface:
             self.siril.disconnect()
             self.root.quit()
             self.root.destroy()
-
-def AddHistory(filename, history_text):
-    """Adds a history record to the header of a FITS file.
-
-    Args:
-        filename (str): Path to the FITS file.
-        history_text (str): The history text to add.
-    """
-    try:
-        with fits.open(filename, mode='update') as hdul:
-            hdul[0].header.add_history(history_text)
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-         print(f"An error occurred: {e}")
 
 def main():
     try:

@@ -7,9 +7,9 @@ s.ensure_installed("numpy")
 import os
 import re
 import sys
-import math
 import asyncio
 import subprocess
+import threading
 from astropy.io import fits # type: ignore
 import numpy as np # type: ignore
 
@@ -174,7 +174,7 @@ class SirilCosmicClarityInterface:
         stellar_amount_frame.pack(fill=tk.X, pady=5)
         ttk.Label(stellar_amount_frame, text="  Stellar Sharpening:").pack(side=tk.LEFT)
 
-        self.stellar_amount_var = tk.DoubleVar(value=0.50)
+        self.stellar_amount_var = tk.DoubleVar(value=0.55)
         stellar_amount_scale = ttk.Scale(
             stellar_amount_frame,
             from_=0.0,
@@ -222,17 +222,20 @@ class SirilCosmicClarityInterface:
         self.root.destroy()
 
     def RunApplyChanges(self):
-        asyncio.run(self.ApplyChanges())
+        """Run Apply changes in a separate thread to avoid blocking the GUI."""
+        # TODO: we should really disable the apply and close buttons here to prevent multiple clicks
+        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def run_cosmic_clarity(self):
         """Run Cosmic Clarity"""
         try:
+            # setiastro sharpen doesn't like it if you don't pass in all the arguments, even if you don't use them
             command = [
                 sharpenExecutable,
                 f"--sharpening_mode={self.sharpening_mode_var.get()}",
                 f"--stellar_amount={self.stellar_amount_var.get()}",
                 f"--nonstellar_amount={self.non_stellar_amount_var.get()}",
-                f"--nonstellar_strength={self.non_stellar_psf_var.get()}"
+                f"--nonstellar_strength={self.non_stellar_psf_var.get()}",
             ]
 
             if not self.use_gpu_var.get():
@@ -326,7 +329,13 @@ class SirilCosmicClarityInterface:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        self.siril.undo_save_state(f"CC sharpening: mode='{self.sharpening_mode_var.get()}', stellar={self.stellar_amount_var.get()}, non-stellar={self.non_stellar_amount_var.get()}, str={self.non_stellar_psf_var.get()}")
+                        save_state = f"CC sharpening: '{self.sharpening_mode_var.get()},'"
+                        if self.sharpening_mode_var.get() == "Stellar Only" or self.sharpening_mode_var.get() == "Both":
+                            save_state += f" stellar={self.stellar_amount_var.get()},"
+                        if self.sharpening_mode_var.get() == "Non-Stellar Only" or self.sharpening_mode_var.get() == "Both":
+                            save_state += f" non-stellar={self.non_stellar_amount_var.get()}, str={self.non_stellar_psf_var.get()}"
+                        save_state = save_state.rstrip(",")
+                        self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
                     
                     self.siril.reset_progress()

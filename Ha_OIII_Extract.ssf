@@ -24,7 +24,8 @@ register OIII_pp_light
 stack r_OIII_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_00002
 
 # Align the result images, small shifts and chromatic aberrations can occur
-register results -transf=shift -interp=none
+register results -2pass
+seqapplyreg results
 
 # Renorm OIII to Ha using PixelMath
 #pm $r_results_00002$*mad($r_results_00001$)/mad($r_results_00002$)-mad($r_results_00001$)/mad($r_results_00002$)*median($r_results_00002$)+median($r_results_00001$)

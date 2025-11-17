@@ -1,5 +1,5 @@
 import sirilpy as s
-s.ensure_installed("ttkthemes")
+s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
 
@@ -7,200 +7,184 @@ import os
 import sys
 import asyncio
 import subprocess
-import threading
 
-import tkinter as tk
-from tkinter import ttk
-from ttkthemes import ThemedTk # type: ignore
-from sirilpy import tksiril
+from PyQt6 import QtCore # type: ignore
+from PyQt6.QtWidgets import ( # type: ignore
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QDoubleSpinBox, QPushButton, QMessageBox, QSlider
+)
 from astropy.io import fits # type: ignore
 import numpy as np # type: ignore
 
 graxpertTemp = "graxpert-temp.fits"
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
 
-class SirilBackgrounExtractInterface:
-    """Siril interface class for background extraction using GraXpert."""
+class Worker(QtCore.QObject):
+    finished = QtCore.pyqtSignal()
+    error = QtCore.pyqtSignal(str)
 
-    def __init__(self, root):
-        """SirilBackgrounExtractInterface constructor"""
-        self.root = root
-        self.root.title(f"GraXpert Background Extract")
-        self.root.resizable(False, False)
-        self.style = tksiril.standard_style()
+    def __init__(self, siril, gradient_value):
+        super().__init__()
+        self.siril = siril
+        self.gradient_value = gradient_value
 
-        # Initialize Siril connection
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            asyncio.run(self.apply_changes())
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+    async def apply_changes(self):
+        try:
+            with self.siril.image_lock():
+                curfilename = self.siril.get_image_filename()
+                basename = os.path.basename(curfilename)
+                directory = os.path.dirname(curfilename)
+                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-bge")
+                outputFile = outputFileNoSuffix + ".fits"
+
+                if os.path.exists(graxpertTemp):
+                    os.remove(graxpertTemp)
+
+                self.siril.cmd("save", outputFile)
+
+                args = [
+                    outputFile, "-cli", "-cmd", "background-extraction",
+                    "-ai_version", "-smoothing", str(self.gradient_value / 100),
+                    "-output", "graxpert-temp"
+                ]
+
+                print("Running GraXpert:", args)
+
+                # Run GraXpert CLI
+                subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
+
+                # load the resulting image and set it in Siril
+                with fits.open(os.path.basename(graxpertTemp)) as hdul:
+                    data = hdul[0].data
+                    if data.dtype != np.float32:
+                        data = np.array(data, dtype=np.float32)
+                    self.siril.undo_save_state(f"GraXpert background extraction smoothing={self.gradient_value:.2f}")
+                    self.siril.set_image_pixeldata(data)
+
+        finally:
+            if os.path.exists(graxpertTemp):
+                os.remove(graxpertTemp)
+
+class GraxpertBGEWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("GraXpert Background Extract")
+        self.setFixedSize(420, 140)
+
+        # Connect to Siril
         self.siril = s.SirilInterface()
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril")
-            self.close_dialog()
+            QMessageBox.critical(self, "Error", "Failed to connect to Siril")
+            self.close()
             return
 
         if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
+            QMessageBox.critical(self, "Error", "No image loaded in Siril")
+            self.siril.disconnect()
+            self.close()
             return
 
         try:
             self.siril.cmd("requires", "1.3.6")
         except s.CommandError:
-            self.close_dialog()
+            QMessageBox.critical(self, "Error", "Siril version requirement not met")
+            self.siril.disconnect()
+            self.close()
             return
 
-        tksiril.match_theme_to_siril(self.root, self.siril)
-        self.create_widgets()
+        self.init_ui()
 
-    def create_widgets(self):
-            """Create the GUI widgets"""
+    def init_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout()
+        central.setLayout(layout)
 
-            # Main frame
-            main_frame = ttk.Frame(self.root, padding=10)
-            main_frame.pack(fill=tk.BOTH, expand=True)
+        # Gradient smoothing controls
+        gs_layout = QHBoxLayout()
+        gs_layout.addWidget(QLabel("Gradient Smoothing:"))
 
-            # Options Frame
-            options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
-            options_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.gs_slider = QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.gs_slider.setRange(1, 100)
+        self.gs_slider.setValue(85)
+        gs_layout.addWidget(self.gs_slider)
+        self.gs_value_label = QLabel(f"{self.gs_slider.value()}")
+        gs_layout.addWidget(self.gs_value_label)
+        self.gs_slider.valueChanged.connect(lambda v: self.gs_value_label.setText(f"{v}"))
+        layout.addLayout(gs_layout)
 
-            # Gradient Smoothing Widget
-            gradient_smoothing_frame = ttk.Frame(options_frame)
-            gradient_smoothing_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(gradient_smoothing_frame, text="Gradient Smoothing:").pack(side=tk.LEFT)
+        # Buttons
+        btn_layout = QHBoxLayout()
+        self.apply_btn = QPushButton("Apply")
+        self.apply_btn.clicked.connect(self.on_apply)
+        btn_layout.addWidget(self.apply_btn)
 
-            self.gradient_smoothing_var = tk.DoubleVar(value=1.0)
-            gradient_smoothing_scale = ttk.Scale(
-                gradient_smoothing_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.gradient_smoothing_var,
-                length=200
-            )
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.on_close)
+        btn_layout.addWidget(self.close_btn)
 
-            gradient_smoothing_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            ttk.Label(
-                gradient_smoothing_frame,
-                textvariable=self.gradient_smoothing_var,
-                width=5
-            ).pack(side=tk.LEFT)
+        layout.addLayout(btn_layout)
 
-            # Add trace to update val when slider changes
-            self.gradient_smoothing_var.trace_add("write", self.update_gradient_smoothing)
+        # Thread placeholders
+        self.thread = None
+        self.worker = None
 
-            # Action Buttons
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(pady=10)
+    def on_apply(self):
+        self.apply_btn.setEnabled(False)
+        self.close_btn.setEnabled(False)
 
-            # Close Button
-            close_btn = ttk.Button(
-                button_frame,
-                text="Close",
-                command=self.OnClose,
-                style="TButton"
-            )
-            close_btn.pack(side=tk.LEFT, padx=5)
+        gradient_value = self.gs_slider.value()
 
-            # Apply Button
-            apply_btn = ttk.Button(
-                button_frame,
-                text="Apply",
-                command=self.OnApply,
-                style="TButton"
-            )
-            apply_btn.pack(side=tk.LEFT, padx=5)
+        # Create worker and thread
+        self.worker = Worker(self.siril, gradient_value)
+        self.thread = QtCore.QThread()
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.on_worker_finished)
+        self.worker.error.connect(self.on_worker_error)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
-            # Bind keys for closing and applying
-            self.root.protocol("WM_DELETE_WINDOW", self.OnClose)
-            self.root.bind("<Escape>", lambda e: self.OnClose())
-            self.root.bind("<Return>", lambda e: self.OnApply())
-            self.root.bind("<KP_Enter>", lambda e: self.OnApply())
-            
-    def OnApply(self):
-        """Callback for the Apply button."""
-        self.root.after(0, self.RunApplyChanges)
+        self.thread.start()
 
-    def RunApplyChanges(self):
-        """Run the async task to apply changes."""
-        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
+    def on_worker_finished(self):
+        self.cleanup_and_close()
 
-    def OnClose(self):
-        """Callback for the Close button."""
-        self.siril.disconnect()
-        self.root.quit()
-        self.root.destroy()
+    def on_worker_error(self, msg):
+        print("Error during GraXpert processing:", msg)
+        self.apply_btn.setEnabled(True)
+        self.close_btn.setEnabled(True)
 
-    def update_gradient_smoothing(self, *args):
-        """Update gradient smoothing value to two decimal places."""
-        self.gradient_smoothing_var.set(f"{self.gradient_smoothing_var.get():.2f}")
-
-    async def ApplyChanges(self):
+    def cleanup_and_close(self):
         try:
-            # Claim the processing thread
-            with self.siril.image_lock():
-                # Get the current image filename
-                curfilename = self.siril.get_image_filename()
-                basename = os.path.basename(curfilename)
-                directory = os.path.dirname(curfilename)
-                outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-bge-temp")
-                outputFile = outputFileNoSuffix + ".fits"
-
-                # Check if the temporary file exists and remove it                
-                if os.path.exists(graxpertTemp):
-                    os.remove(graxpertTemp)
-
-                # Save the current image to a temporary fits file
-                self.siril.cmd("save", graxpertTemp)
-
-                args = [
-                    graxpertTemp, "-cli", "-cmd", "background-extraction",
-                    "-ai_version", "-smoothing", str(self.gradient_smoothing_var.get()),
-                    "-output", outputFileNoSuffix
-                ]
-
-                # Check if the output file already exists
-                if os.path.exists(outputFile):
-                    print(f"Output file {outputFile} already exists. Removing it.")
-                    os.remove(outputFile)
-
-                # Run GraXpert
-                print("Running background extraction...")
-                print(f"Command: {graxpertExecutable} {' '.join(args)}")
-                self.siril.update_progress("Graxpert background extraction running...", 0)
-                subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
-                print("Background extraction completed.")
-
-                # load the resulting image and set it in Siril
-                with fits.open(os.path.basename(outputFile)) as hdul:
-                    print("Loading result: " + os.path.basename(outputFile))
-                    data = hdul[0].data
-                    if data.dtype != np.float32:
-                        data = np.array(data, dtype=np.float32)
-                    self.siril.undo_save_state(f"GraXpert background extraction smoothing={self.gradient_smoothing_var.get():.2f}")
-                    self.siril.set_image_pixeldata(data)
-
-        except Exception as e:
-            print(f"Error in apply_changes: {str(e)}")
-            self.siril.update_progress(f"Error: {str(e)}", 0)
-
-        finally:
-            # Clean up temporary file
-            if os.path.exists(graxpertTemp):
-                os.remove(graxpertTemp)
-            if os.path.exists(outputFile):
-                os.remove(outputFile)
             self.siril.disconnect()
-            self.root.quit()
-            self.root.destroy()
+        except Exception:
+            pass
+        self.close()
+
+    def on_close(self):
+        try:
+            self.siril.disconnect()
+        except Exception:
+            pass
+        self.close()
 
 def main():
-    try:
-        root = ThemedTk(theme="arc")
-        app = SirilBackgrounExtractInterface(root)
-        root.mainloop()
-    except Exception as e:
-        print(f"Error initializing application: {str(e)}")
-        sys.exit(1)
+    app = QApplication(sys.argv)
+    win = GraxpertBGEWindow()
+    win.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

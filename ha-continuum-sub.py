@@ -13,23 +13,24 @@ s.ensure_installed("scipy")
 
 import os
 import sys
-import numpy as np                      # type: ignore
-import matplotlib.pyplot as plt         # type: ignore
+import numpy as np
+import matplotlib.pyplot as plt
 
-from PyQt6.QtWidgets import (           # type: ignore
+from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox, QSlider,
     QTextEdit, QComboBox, QMainWindow
 )
-from PyQt6.QtCore import Qt, QTimer     # type: ignore
-from astropy.io import fits             # type: ignore
-from scipy.optimize import curve_fit    # type: ignore
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg # type: ignore
+from PyQt6.QtCore import Qt, QTimer
+from astropy.io import fits
+from scipy.optimize import curve_fit
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
 version = "v1.x.y"
 
 class SirilCSWindow(QWidget):
     def __init__(self):
+        """ Constructor for our UI class """
         super().__init__()
         self.setWindowTitle(f"Continuum Subtraction {version}")
         self.setFixedWidth(760)
@@ -50,22 +51,21 @@ class SirilCSWindow(QWidget):
             self.siril.disconnect()
             self.close()
             return
+        
+        # initialize some member variables
+        self.r_file = ""
+        self.g_file = ""
+        self.b_file = ""
+        self.ha_file = ""
+        self.sii_file = ""
+        self.oiii_file = ""
+        self.emission_file = ""
+        self.component_file = ""
+        self.cs_file = ""
 
-        self._create_ui()
+        self.create_ui()
 
-    def add_file_row(self, label_text, lineedit, width):
-        row = QHBoxLayout()
-        label = QLabel(label_text)
-        label.setFixedWidth(width) # tweak for label alignment
-        row.addWidget(label)
-        row.addWidget(lineedit, 1)
-        btn = QPushButton("Select")
-        row.addWidget(btn)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
-        return row, btn
-
-    def _create_ui(self):
+    def create_ui(self):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -104,19 +104,19 @@ class SirilCSWindow(QWidget):
         EMISSION_LABEL_WIDTH = 20
 
         self.r_line = QLineEdit()
-        self.r_file = ""
+        self.r_line.setReadOnly(True)
         row, btn = self.add_file_row("R:", self.r_line, COMPONENT_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("r_file", self.r_line))
         right_col.addLayout(row)
 
         self.g_line = QLineEdit()
-        self.g_file = ""
+        self.g_line.setReadOnly(True)
         row, btn = self.add_file_row("G:", self.g_line, COMPONENT_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("g_file", self.g_line))
         right_col.addLayout(row)
 
         self.b_line = QLineEdit()
-        self.b_file = ""
+        self.b_line.setReadOnly(True)
         row, btn = self.add_file_row("B:", self.b_line, COMPONENT_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("b_file", self.b_line))
         right_col.addLayout(row)
@@ -125,19 +125,19 @@ class SirilCSWindow(QWidget):
         left_col.addWidget(self.emission_desc)
 
         self.ha_line = QLineEdit()
-        self.ha_file = ""
+        self.ha_line.setReadOnly(True)
         row, btn = self.add_file_row("Ha:", self.ha_line, EMISSION_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("ha_file", self.ha_line))
         left_col.addLayout(row)
 
         self.sii_line = QLineEdit()
-        self.sii_file = ""
+        self.sii_line.setReadOnly(True)
         row, btn = self.add_file_row("SII:", self.sii_line, EMISSION_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("sii_file", self.sii_line))
         left_col.addLayout(row)
 
         self.oiii_line = QLineEdit()
-        self.oiii_file = ""
+        self.oiii_line.setReadOnly(True)
         row, btn = self.add_file_row("OIII:", self.oiii_line, EMISSION_LABEL_WIDTH)
         btn.clicked.connect(lambda: self.on_select_file("oiii_file", self.oiii_line))
         left_col.addLayout(row)
@@ -167,8 +167,8 @@ class SirilCSWindow(QWidget):
         gen_desc.setReadOnly(True)
         gen_desc.setHtml(
             "Optionally compute the ideal continuum scaling factor <i>c</i>. Load the corresponding "
-            "color component into Siril based upon the selected emission line. Select a region in the image "
-            "in Siril that contains stars but minimal emission, then click 'Estimate'.<br><br>"
+            "emission component into Siril via 'Load'. Select a region in the image "
+            "in Siril that contains the primary subject matter, then click 'Estimate'.<br><br>"
             "Alternatively, set <i>c</i> manually using the slider. Click 'Generate' to create and view the "
             "continuum-subtracted image." 
         )
@@ -188,6 +188,8 @@ class SirilCSWindow(QWidget):
         btn_row.addWidget(self.plot_check_box)
         btn_row.addStretch()    
         hacs_layout.addLayout(btn_row)
+
+        hacs_layout.addSpacing(10)  # fudge for spacing
 
         # c constant continuum slider
         c_row = QHBoxLayout()
@@ -226,6 +228,7 @@ class SirilCSWindow(QWidget):
         q_row.addWidget(self.q_value_label)
         self.q_slider.valueChanged.connect(lambda v: self.q_value_label.setText(f"{v / 100:.2f}"))
         blend_layout.addLayout(q_row)
+
         blend_layout.addSpacing(15)  # fudge for spacing
 
         # blending help text
@@ -235,13 +238,13 @@ class SirilCSWindow(QWidget):
             "Optionally adjust the mixing percentages for the RGB channels when blending the "
             "continuum subtracted image."
         )
-        mix_desc.setFixedHeight(40)
+        mix_desc.setFixedHeight(35)
         mix_desc.setStyleSheet("background: transparent; border: none;")
         blend_layout.addWidget(mix_desc)
 
         # ui constants
         COLOR_LABEL_WIDTH = 35
-        VALUE_LABEL_WIDTH = 35
+        VALUE_LABEL_WIDTH = 30
 
         # optional red channel blending slider
         red_slider_row = QHBoxLayout()
@@ -254,26 +257,12 @@ class SirilCSWindow(QWidget):
         red_slider_row.addWidget(self.red_slider)
         self.red_value_label = QLabel(f"{self.red_slider.value()}%")
         self.red_value_label.setFixedWidth(VALUE_LABEL_WIDTH)
+        self.red_value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         red_slider_row.addWidget(self.red_value_label)
         self.red_slider.valueChanged.connect(lambda v: self.red_value_label.setText(f"{v}%"))
         blend_layout.addLayout(red_slider_row)
 
-        # optional blue channel blending slider
-        blu_slider_row = QHBoxLayout()
-        blu_label = QLabel("Blue:")
-        blu_label.setFixedWidth(COLOR_LABEL_WIDTH)
-        blu_slider_row.addWidget(blu_label)
-        self.blu_slider = QSlider(Qt.Orientation.Horizontal)
-        self.blu_slider.setRange(0, 100)
-        self.blu_slider.setValue(0)
-        blu_slider_row.addWidget(self.blu_slider)
-        self.blu_value_label = QLabel(f"{self.blu_slider.value()}%")
-        self.blu_value_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        blu_slider_row.addWidget(self.blu_value_label)
-        self.blu_slider.valueChanged.connect(lambda v: self.blu_value_label.setText(f"{v}%"))
-        blend_layout.addLayout(blu_slider_row)
-
-        # optional green channel blending slider
+       # optional green channel blending slider
         green_slider_row = QHBoxLayout()
         green_label = QLabel("Green:")
         green_label.setFixedWidth(COLOR_LABEL_WIDTH)
@@ -289,6 +278,22 @@ class SirilCSWindow(QWidget):
         self.green_slider.valueChanged.connect(lambda v: self.green_value_label.setText(f"{v}%"))
         blend_layout.addLayout(green_slider_row)
 
+        # optional blue channel blending slider
+        blu_slider_row = QHBoxLayout()
+        blu_label = QLabel("Blue:")
+        blu_label.setFixedWidth(COLOR_LABEL_WIDTH)
+        blu_slider_row.addWidget(blu_label)
+        self.blu_slider = QSlider(Qt.Orientation.Horizontal)
+        self.blu_slider.setRange(0, 100)
+        self.blu_slider.setValue(0)
+        blu_slider_row.addWidget(self.blu_slider)
+        self.blu_value_label = QLabel(f"{self.blu_slider.value()}%")
+        self.blu_value_label.setFixedWidth(VALUE_LABEL_WIDTH)
+        self.blu_value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        blu_slider_row.addWidget(self.blu_value_label)
+        self.blu_slider.valueChanged.connect(lambda v: self.blu_value_label.setText(f"{v}%"))
+        blend_layout.addLayout(blu_slider_row)
+
         blend_layout.addSpacing(15)  # fudge for spacing
 
         # Blend button
@@ -299,24 +304,49 @@ class SirilCSWindow(QWidget):
 
         layout.addWidget(blend_group)
 
+    def add_file_row(self, label_text, lineedit, label_width):
+        """ Helper to create a file selection row """
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setFixedWidth(label_width)
+        row.addWidget(label)
+        row.addWidget(lineedit, 1)
+        btn = QPushButton("Select")
+        row.addWidget(btn)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        return row, btn
+    
     def on_load(self):
+        """ Load button callback. Load the selected emission line component into Siril so the user can select a region """
         if not self.emission_file or not self.component_file:
             QMessageBox.warning(self, "Missing file", "Please select the emission line component and corresponding color component files.")
             return
         self.siril.cmd("load", self.emission_file)
 
     def on_emission_changed(self, text: str):
+        """ Drop-down callback for selection change"""
         if text == "Ha":
             self.emission_file = self.ha_file
             self.component_file = self.r_file
+            self.red_slider.setValue(100)
+            self.green_slider.setValue(0)
+            self.blu_slider.setValue(0)
         if text == "SII":
             self.emission_file = self.sii_file
             self.component_file = self.g_file
+            self.red_slider.setValue(0)
+            self.green_slider.setValue(100)
+            self.blu_slider.setValue(0)
         if text == "OIII":
             self.emission_file = self.oiii_file
             self.component_file = self.b_file
+            self.red_slider.setValue(0)
+            self.green_slider.setValue(0)
+            self.blu_slider.setValue(100)
 
     def on_select_file(self, file_attr: str, lineedit: QLineEdit):
+        """ File selection button callback """
         path, _ = QFileDialog.getOpenFileName(self, "Select file", "", "FITS files (*.fits *.fit *.fts *.fits.gz *.fit.gz *.fz *.fz2);;All files (*)")
         if path:
             lineedit.setText(os.path.basename(path))
@@ -324,6 +354,7 @@ class SirilCSWindow(QWidget):
             self.on_emission_changed(self.emission_combo.currentText())
 
     def on_generate(self):
+        """ Generate button callback. Generate the continuum subtracted image, and load into Siril """
         c = self.c_slider.value() / 10000.0
 
         if not self.r_file or not self.ha_file:
@@ -347,30 +378,29 @@ class SirilCSWindow(QWidget):
             QMessageBox.critical(self, "Error", f"Error generating continuum subtracted image:\n{e}")
 
     def on_blend(self):
-        cs_file = self.cs_file
-
-        if not all([self.r_file, self.g_file, self.b_file, cs_file]):
+        if not all([self.r_file, self.g_file, self.b_file, self.cs_file]):
             QMessageBox.warning(self, "Missing components", "Please select R, G, B and ensure the continuum subtracted image is generated.")
             return
 
-        q = self.q_slider.value() / 100.0
-        red_adjust = self.red_slider.value() / 100.0
-        blue_adjust = self.blu_slider.value() / 100.0
-        green_adjust = self.green_slider.value() / 100.0
-
         try:
+            q = self.q_slider.value() / 100.0
+            red_adjust = self.red_slider.value() / 100.0
+            blue_adjust = self.blu_slider.value() / 100.0
+            green_adjust = self.green_slider.value() / 100.0
+
             r_data = fits.getdata(self.r_file).astype(np.float32)
             g_data = fits.getdata(self.g_file).astype(np.float32)
             b_data = fits.getdata(self.b_file).astype(np.float32)
-            hacs_data = fits.getdata(cs_file).astype(np.float32)
+            cs_data = fits.getdata(self.cs_file).astype(np.float32)
 
-            hacs_median = np.median(hacs_data)
-            new_rdata = r_data + (hacs_data - hacs_median) * q
-            new_bdata = b_data + (hacs_data - hacs_median) * q * blue_adjust
-            combined_data = np.array([new_rdata, g_data, new_bdata])
+            cs_median = np.median(cs_data)
+            new_rdata = r_data + (cs_data - cs_median) * q * red_adjust
+            new_gdata = g_data + (cs_data - cs_median) * q * green_adjust
+            new_bdata = b_data + (cs_data - cs_median) * q * blue_adjust
+            combined_data = np.array([new_rdata, new_gdata, new_bdata])
 
             # Ensure output shape (3, height, width) as Siril expects planes-first format
-            combined_data = np.array([new_rdata, g_data, b_data], dtype=np.float32)
+            combined_data = np.array([new_rdata, new_gdata, new_bdata], dtype=np.float32)
 
             out_name = "CS-RGB-blended.fits"
             hdu = fits.PrimaryHDU(combined_data)
@@ -410,7 +440,7 @@ class SirilCSWindow(QWidget):
             QMessageBox.critical(self, "Mismatched Images", "Image sizes and types must match.")
             return
         
-        scale_factor = self.compute_continuum_subtraction(
+        c = self.compute_c(
             narrowband_data,
             continuum_data,
             selection,
@@ -418,10 +448,12 @@ class SirilCSWindow(QWidget):
             self.plot_check_box.isChecked()
         )
 
-        print(f"Estimated scale factor: {scale_factor:.4f}")
-        self.c_slider.setValue(int(scale_factor * 10000))
+        print(f"Estimated c: {c:.4f}")
+        self.c_slider.setValue(int(round(c * 10000)))
+        self.on_generate()
 
-    def compute_continuum_subtraction(self, narrowband_image, continuum_image, selection, c_median, plot_optimization):                    
+    def compute_c(self, narrowband_image, continuum_image, selection, c_median, plot_optimization):
+        """ Compute the optimal continuum scaling factor c """
         x, y, w, h = selection
         def slc(im): return im[y:y+h, x:x+w]
         nb = slc(narrowband_image)
@@ -454,7 +486,7 @@ class SirilCSWindow(QWidget):
 
         popt, _ = curve_fit(smooth_v, scale_factors, aad_values, p0=p0, bounds=(lb, ub))
         A_opt, s0_opt, eps_opt, B_opt = popt
-        optimal_scale = float(np.clip(s0_opt, 0, 1))
+        c = float(np.clip(s0_opt, 0, 1))
 
         if plot_optimization and self is not None:
             def show_plot():
@@ -463,9 +495,9 @@ class SirilCSWindow(QWidget):
                 fx = np.linspace(min_val, max_val, 500)
                 fy = smooth_v(fx, *popt)
                 ax.plot(fx, fy, 'C3-', label="Smooth-V fit")
-                min_aad = smooth_v(optimal_scale, *popt)
-                ax.plot([optimal_scale], [min_aad], 'go', ms=10, label=f'Optimal scale = {optimal_scale:.4f}')
-                ax.axvline(optimal_scale, color='green', ls='--', alpha=0.5)
+                min_aad = smooth_v(c, *popt)
+                ax.plot([c], [min_aad], 'go', ms=10, label=f'Optimal scale = {c:.4f}')
+                ax.axvline(c, color='green', ls='--', alpha=0.5)
                 ax.set_title('Optimization for Continuum Subtraction')
                 ax.set_xlabel('Scale Factor')
                 ax.set_ylabel('AAD')
@@ -484,13 +516,11 @@ class SirilCSWindow(QWidget):
 
             QTimer.singleShot(0, show_plot)
 
-        return optimal_scale
-
+        return c
 
 def aad(data):
     mean = np.mean(data)
     return np.mean(np.abs(data - mean))
-
 
 def find_min(nb, co, c_median, siril):
     scale_factors = np.linspace(-1, 5, 12)
@@ -504,8 +534,6 @@ def find_min(nb, co, c_median, siril):
 
     min_val = scale_factors[np.argmin(aad_values)]
     return min_val
-
-
 
 def main():
     app = QApplication(sys.argv)

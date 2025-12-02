@@ -26,6 +26,7 @@ s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
 s.ensure_installed("scipy")
+s.ensure_installed("matplotlib")
 
 import os
 import sys

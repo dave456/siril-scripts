@@ -1,10 +1,26 @@
-# (c) Dave Lindner 2025
-# SPDX-License-Identifier: GPL-3.0-or-later
-# lindner234  <AT> gmail
+# Narrowband Continuum Subtraction script - JAX Optimized
+# SPDX-License-Identifier: GPL-3.0
+# Author: Adrian Knagg-Baugh, (c) 2025
+# Author: Dave Lindner (c) 2025 lindner234 <AT> gmail
 """
-Adds Ha data to RGB images by blending a continuum-subtracted Ha component
-into the RGB image, with user-adjustable parameters.
+This script provides continuum subtraction for narrowband images.
+It uses the currently loaded narrowband image in Siril and allows the user
+to select a continuum image, then automatically determines the optimal
+scaling factor for subtraction by minimizing the nonuniformity in a
+user-selected region using AAD (Average Absolute Deviation).
+
 """
+# Version history
+# 1.0.0 Initial release
+# 1.0.1 Bug fixes
+# 1.0.2 Improve file selection on Linux (use tkfilebrowser)
+# 2.0.0 Conversion of GUI to PyQt6
+# 2.0.1 Linear fit for enhanced continuum to preserve median
+# 3.0.1 Major refactor, add blending of RGB with continuum subtracted image
+#       user adjustable parameters for blending
+# 3.0.2 Use expandable component groups for smaller screens
+
+
 import sirilpy as s
 s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
@@ -26,7 +42,38 @@ from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v1.x.y"
+version = "v3.0.2"
+
+# Simple collapsible group widget
+class CollapsibleGroup(QWidget):
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self.toggle = QPushButton(title)
+        self.toggle.setCheckable(True)
+        self.toggle.setChecked(True)
+        self.toggle.setFlat(True)
+        self.toggle.setStyleSheet("text-align: left; font-weight: bold;")
+
+        self.content = QWidget()
+        self.content.setLayout(QVBoxLayout())
+        self.content.layout().setContentsMargins(0, 6, 0, 0)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.toggle)
+        lay.addWidget(self.content)
+
+        self.toggle.toggled.connect(self.content.setVisible)
+        self.toggle.toggled.connect(self.on_toggled)
+
+    def on_toggled(self, checked: bool):
+        """ Update dialog size on toggle (and get cute with button text) """
+        if checked:
+            self.toggle.setText(self.toggle.text().replace(" (click to expand)", " (click to collapse)"))
+        else:
+            self.toggle.setText(self.toggle.text().replace(" (click to collapse)", " (click to expand)"))
+        QTimer.singleShot(0, lambda: (self.window().adjustSize() if self.window() is not None else self.adjustSize()))
 
 class SirilCSWindow(QWidget):
     def __init__(self):
@@ -85,23 +132,27 @@ class SirilCSWindow(QWidget):
         layout.addWidget(desc)
 
         # Components selection group
-        comps = QGroupBox("Components")
-        comps_layout = QHBoxLayout()
+        comps_group = CollapsibleGroup("Components  (click to collapse)")
+        comps_layout = comps_group.content.layout()
         comps_layout.setContentsMargins(8, 8, 8, 8)
         comps_layout.setSpacing(12)
-        comps.setLayout(comps_layout)
+
+        # create a box for our columns
+        comps_box = QGroupBox()
+        comps_box.setLayout(QHBoxLayout())
+        comps_group.content.layout().addWidget(comps_box)
 
         left_col = QVBoxLayout()
         left_col.setSpacing(6)
         right_col = QVBoxLayout()
         right_col.setSpacing(6)
 
-        self.cont_desc = QLabel("Color Components")
-        right_col.addWidget(self.cont_desc, alignment=Qt.AlignmentFlag.AlignHCenter)
-
         # ui constants
         COMPONENT_LABEL_WIDTH = 10
         EMISSION_LABEL_WIDTH = 20
+
+        self.cont_desc = QLabel("Color Components")
+        right_col.addWidget(self.cont_desc, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.r_line = QLineEdit()
         self.r_line.setReadOnly(True)
@@ -142,25 +193,31 @@ class SirilCSWindow(QWidget):
         btn.clicked.connect(lambda: self.on_select_file("oiii_file", self.oiii_line))
         left_col.addLayout(row)
 
-        comps_layout.addLayout(left_col, 1)
-        comps_layout.addLayout(right_col, 1)
-        layout.addWidget(comps)
+        comps_box.layout().addLayout(left_col, 1)
+        comps_box.layout().addLayout(right_col, 1)
+        layout.addWidget(comps_group)
 
         # CS generation group
-        hacs_group = QGroupBox("Continuum Subtraction Generation")
-        hacs_layout = QVBoxLayout()
-        hacs_group.setLayout(hacs_layout)
+        csgen_group = CollapsibleGroup("Continuum Subtraction Generation  (click to collapse)")
+        csgen_layout = csgen_group.content.layout()
+        csgen_layout.setContentsMargins(8, 8, 8, 8)
+        csgen_layout.setSpacing(12)
+        
+        # create a box for the components
+        csgen_box = QGroupBox()
+        csgen_box.setLayout(QVBoxLayout())
+        csgen_group.content.layout().addWidget(csgen_box)
 
         # drop-down to select which emission line to operate on
         self.emission_desc = QLabel("Emission Line Selection")
-        hacs_layout.addWidget(self.emission_desc)
+        csgen_box.layout().addWidget(self.emission_desc)
+
         self.emission_combo = QComboBox()
         self.emission_combo.addItems(["Ha", "SII", "OIII"])
-        # default to Ha
-        self.emission_combo.setCurrentIndex(0)
+        self.emission_combo.setCurrentIndex(0) # default to Ha
         self.emission_combo.setFixedWidth(70)
         self.emission_combo.currentTextChanged.connect(self.on_emission_changed)
-        hacs_layout.addWidget(self.emission_combo)
+        csgen_box.layout().addWidget(self.emission_combo)
 
         # explain this stuff
         gen_desc = QTextEdit()
@@ -168,13 +225,13 @@ class SirilCSWindow(QWidget):
         gen_desc.setHtml(
             "Optionally compute the ideal continuum scaling factor <i>c</i>. Load the corresponding "
             "emission component into Siril via 'Load'. Select a region in the image "
-            "in Siril that contains the primary subject matter, then click 'Estimate'.<br><br>"
+            "in Siril that contains the primary subject matter, then click 'Estimate'. "
             "Alternatively, set <i>c</i> manually using the slider. Click 'Generate' to create and view the "
             "continuum-subtracted image." 
         )
-        gen_desc.setFixedHeight(80)
+        gen_desc.setFixedHeight(70)
         gen_desc.setStyleSheet("background: transparent; border: none;")
-        hacs_layout.addWidget(gen_desc)
+        csgen_box.layout().addWidget(gen_desc)
 
         # load and estimate buttons
         btn_row = QHBoxLayout()
@@ -186,10 +243,10 @@ class SirilCSWindow(QWidget):
         btn_row.addWidget(load_btn)
         btn_row.addWidget(estimate_btn)
         btn_row.addWidget(self.plot_check_box)
-        btn_row.addStretch()    
-        hacs_layout.addLayout(btn_row)
+        btn_row.addStretch()
+        csgen_box.layout().addLayout(btn_row)
 
-        hacs_layout.addSpacing(10)  # fudge for spacing
+        csgen_box.layout().addSpacing(10)  # fudge for spacing
 
         # c constant continuum slider
         c_row = QHBoxLayout()
@@ -201,21 +258,27 @@ class SirilCSWindow(QWidget):
         self.c_value_label = QLabel(f"{self.c_slider.value() / 10000:.4f}")
         c_row.addWidget(self.c_value_label)
         self.c_slider.valueChanged.connect(lambda v: self.c_value_label.setText(f"{v / 10000:.4f}"))
-        hacs_layout.addLayout(c_row)
-
+        csgen_box.layout().addLayout(c_row)
+        
         # generate button
         gen_btn = QPushButton("Generate")
         gen_btn.clicked.connect(self.on_generate)
         gen_btn.setFixedWidth(80)
-        hacs_layout.addWidget(gen_btn)
+        csgen_box.layout().addWidget(gen_btn)
 
         # add the group to main layout
-        layout.addWidget(hacs_group)
+        layout.addWidget(csgen_group)
 
-        # Blending options
-        blend_group = QGroupBox("Blending Options")
-        blend_layout = QVBoxLayout()
-        blend_group.setLayout(blend_layout)
+        # Blending group
+        blend_group = CollapsibleGroup("Blending Options  (click to collapse)")
+        blend_layout = blend_group.content.layout()
+        blend_layout.setContentsMargins(8, 8, 8, 8)
+        blend_layout.setSpacing(12)
+
+        # create a box for the components
+        blend_box = QGroupBox()
+        blend_box.setLayout(QVBoxLayout())
+        blend_group.content.layout().addWidget(blend_box)
 
         # q strength slider (determines Ha contribution to final image)
         q_row = QHBoxLayout()
@@ -227,20 +290,9 @@ class SirilCSWindow(QWidget):
         self.q_value_label = QLabel(f"{self.q_slider.value() / 100:.2f}")
         q_row.addWidget(self.q_value_label)
         self.q_slider.valueChanged.connect(lambda v: self.q_value_label.setText(f"{v / 100:.2f}"))
-        blend_layout.addLayout(q_row)
+        blend_box.layout().addLayout(q_row)
 
-        blend_layout.addSpacing(15)  # fudge for spacing
-
-        # blending help text
-        mix_desc = QTextEdit()
-        mix_desc.setReadOnly(True)
-        mix_desc.setHtml(
-            "Optionally adjust the mixing percentages for the RGB channels when blending the "
-            "continuum subtracted image."
-        )
-        mix_desc.setFixedHeight(35)
-        mix_desc.setStyleSheet("background: transparent; border: none;")
-        blend_layout.addWidget(mix_desc)
+        blend_box.layout().addSpacing(15)  # fudge for spacing
 
         # ui constants
         COLOR_LABEL_WIDTH = 35
@@ -260,7 +312,7 @@ class SirilCSWindow(QWidget):
         self.red_value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         red_slider_row.addWidget(self.red_value_label)
         self.red_slider.valueChanged.connect(lambda v: self.red_value_label.setText(f"{v}%"))
-        blend_layout.addLayout(red_slider_row)
+        blend_box.layout().addLayout(red_slider_row)
 
        # optional green channel blending slider
         green_slider_row = QHBoxLayout()
@@ -276,7 +328,7 @@ class SirilCSWindow(QWidget):
         self.green_value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         green_slider_row.addWidget(self.green_value_label)
         self.green_slider.valueChanged.connect(lambda v: self.green_value_label.setText(f"{v}%"))
-        blend_layout.addLayout(green_slider_row)
+        blend_box.layout().addLayout(green_slider_row)
 
         # optional blue channel blending slider
         blu_slider_row = QHBoxLayout()
@@ -292,15 +344,15 @@ class SirilCSWindow(QWidget):
         self.blu_value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         blu_slider_row.addWidget(self.blu_value_label)
         self.blu_slider.valueChanged.connect(lambda v: self.blu_value_label.setText(f"{v}%"))
-        blend_layout.addLayout(blu_slider_row)
+        blend_box.layout().addLayout(blu_slider_row)
 
-        blend_layout.addSpacing(15)  # fudge for spacing
+        blend_box.layout().addSpacing(15)  # fudge for spacing
 
         # Blend button
         blend_btn = QPushButton("Blend")
         blend_btn.clicked.connect(self.on_blend)
         blend_btn.setFixedWidth(80)
-        blend_layout.addWidget(blend_btn)
+        blend_box.layout().addWidget(blend_btn)
 
         layout.addWidget(blend_group)
 

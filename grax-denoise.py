@@ -17,7 +17,7 @@ from tkinter import ttk
 from ttkthemes import ThemedTk # type: ignore
 from sirilpy import tksiril
 
-graxpertTemp = "graxpert-temp.fits"
+graxpertTemp = ""
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
 
 
@@ -146,6 +146,7 @@ class SirilDenoiseInterface:
                 directory = os.path.dirname(curfilename)
                 outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-grax_nr-temp")
                 outputFile = outputFileNoSuffix + ".fits"
+                graxpertTemp = f"{basename.split('.')[0]}-denoise.fits"
 
                 # save the current image to a temporary fits file and move to input directory
                 if os.path.exists(graxpertTemp):

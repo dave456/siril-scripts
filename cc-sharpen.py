@@ -152,7 +152,7 @@ class SirilCosmicClarityInterface:
         non_stellar_amount_frame.pack(fill=tk.X, pady=5)
         ttk.Label(non_stellar_amount_frame, text="  Non-Stellar Sharpening:").pack(side=tk.LEFT)
 
-        self.non_stellar_amount_var = tk.DoubleVar(value=0.80)
+        self.non_stellar_amount_var = tk.DoubleVar(value=0.85)
         non_stellar_strength_scale = ttk.Scale(
             non_stellar_amount_frame,
             from_=0.0,
@@ -174,7 +174,7 @@ class SirilCosmicClarityInterface:
         stellar_amount_frame.pack(fill=tk.X, pady=5)
         ttk.Label(stellar_amount_frame, text="  Stellar Sharpening:").pack(side=tk.LEFT)
 
-        self.stellar_amount_var = tk.DoubleVar(value=0.55)
+        self.stellar_amount_var = tk.DoubleVar(value=0.65)
         stellar_amount_scale = ttk.Scale(
             stellar_amount_frame,
             from_=0.0,

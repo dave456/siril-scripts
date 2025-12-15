@@ -19,6 +19,8 @@ user-selected region using AAD (Average Absolute Deviation).
 # 3.0.1 Major refactor, add blending of RGB with continuum subtracted image
 #       user adjustable parameters for blending
 # 3.0.2 Use expandable component groups for smaller screens
+# 3.0.3 Add about section (collapsed) to further handle small screens
+#       Fixed bug in in OIII/Sii CS generation
 
 
 import sirilpy as s
@@ -43,7 +45,7 @@ from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v3.0.2"
+version = "v3.0.3"
 
 # Simple collapsible group widget
 class CollapsibleGroup(QWidget):
@@ -71,9 +73,9 @@ class CollapsibleGroup(QWidget):
     def on_toggled(self, checked: bool):
         """ Update dialog size on toggle (and get cute with button text) """
         if checked:
-            self.toggle.setText(self.toggle.text().replace(" (click to expand)", " (click to collapse)"))
+            self.toggle.setText(self.toggle.text().replace(" ►", " ▼"))
         else:
-            self.toggle.setText(self.toggle.text().replace(" (click to collapse)", " (click to expand)"))
+            self.toggle.setText(self.toggle.text().replace(" ▼", " ►"))
         QTimer.singleShot(0, lambda: (self.window().adjustSize() if self.window() is not None else self.adjustSize()))
 
 class SirilCSWindow(QWidget):
@@ -117,6 +119,11 @@ class SirilCSWindow(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
+        about_group = CollapsibleGroup("ℹ️ About  ►")
+        about_group.toggle.setChecked(False)  # start collapsed
+        about_layout = about_group.content.layout()
+        about_layout.setContentsMargins(8, 8, 8, 8)
+
         desc = QTextEdit()
         desc.setReadOnly(True)
         desc.setHtml(
@@ -125,15 +132,21 @@ class SirilCSWindow(QWidget):
             "and blend it with RGB channels to create a final image. Select the desired "
             "component files, adjust the parameters, generate the continuum subtracted image, "
             "and apply the blend.<br><br>"
+            "To compute the ideal continuum scaling factor <i>c</i>. Load the corresponding "
+            "emission component into Siril via 'Load'. Select a region in the image "
+            "in Siril that contains the primary subject matter, then click 'Estimate'. "
+            "Alternatively, set <i>c</i> manually using the slider. Click 'Generate' to create and view the "
+            "continuum-subtracted image.<br><br>" 
             "<i>Note:</i> Ensure that the component FITS files are aligned, unstretched and in "
             "32-bit float format for best results."
         )
-        desc.setFixedHeight(110)
+        desc.setFixedHeight(175)
         desc.setStyleSheet("background: transparent; border: none;")
-        layout.addWidget(desc)
+        about_layout.addWidget(desc)
+        layout.addWidget(about_group)
 
         # Components selection group
-        comps_group = CollapsibleGroup("Components  (click to collapse)")
+        comps_group = CollapsibleGroup("Components  ▼")
         comps_layout = comps_group.content.layout()
         comps_layout.setContentsMargins(8, 8, 8, 8)
         comps_layout.setSpacing(12)
@@ -199,7 +212,7 @@ class SirilCSWindow(QWidget):
         layout.addWidget(comps_group)
 
         # CS generation group
-        csgen_group = CollapsibleGroup("Continuum Subtraction Generation  (click to collapse)")
+        csgen_group = CollapsibleGroup("Continuum Subtraction Generation  ▼")
         csgen_layout = csgen_group.content.layout()
         csgen_layout.setContentsMargins(8, 8, 8, 8)
         csgen_layout.setSpacing(12)
@@ -219,20 +232,6 @@ class SirilCSWindow(QWidget):
         self.emission_combo.setFixedWidth(70)
         self.emission_combo.currentTextChanged.connect(self.on_emission_changed)
         csgen_box.layout().addWidget(self.emission_combo)
-
-        # explain this stuff
-        gen_desc = QTextEdit()
-        gen_desc.setReadOnly(True)
-        gen_desc.setHtml(
-            "Optionally compute the ideal continuum scaling factor <i>c</i>. Load the corresponding "
-            "emission component into Siril via 'Load'. Select a region in the image "
-            "in Siril that contains the primary subject matter, then click 'Estimate'. "
-            "Alternatively, set <i>c</i> manually using the slider. Click 'Generate' to create and view the "
-            "continuum-subtracted image." 
-        )
-        gen_desc.setFixedHeight(70)
-        gen_desc.setStyleSheet("background: transparent; border: none;")
-        csgen_box.layout().addWidget(gen_desc)
 
         # load and estimate buttons
         btn_row = QHBoxLayout()
@@ -271,7 +270,7 @@ class SirilCSWindow(QWidget):
         layout.addWidget(csgen_group)
 
         # Blending group
-        blend_group = CollapsibleGroup("Blending Options  (click to collapse)")
+        blend_group = CollapsibleGroup("Blending Options  ▼")
         blend_layout = blend_group.content.layout()
         blend_layout.setContentsMargins(8, 8, 8, 8)
         blend_layout.setSpacing(12)
@@ -410,18 +409,18 @@ class SirilCSWindow(QWidget):
         """ Generate button callback. Generate the continuum subtracted image, and load into Siril """
         c = self.c_slider.value() / 10000.0
 
-        if not self.r_file or not self.ha_file:
+        if not self.component_file or not self.emission_file:
             QMessageBox.warning(self, "Missing files", "Please select both Emission and Color component files.")
             return
 
         try:
-            r_data = fits.getdata(self.r_file)
-            ha_data = fits.getdata(self.ha_file)
-            hacs_data = ha_data - c * r_data
+            component_data = fits.getdata(self.component_file)
+            emission_data = fits.getdata(self.emission_file)
+            cs_data = emission_data - c * component_data
 
             out_name = "CS-generated.fits"
             self.cs_file = out_name
-            hdu = fits.PrimaryHDU(hacs_data)
+            hdu = fits.PrimaryHDU(cs_data)
             hdu.writeto(out_name, overwrite=True)
 
             # Load into Siril

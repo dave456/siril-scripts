@@ -18,8 +18,8 @@ from tkinter import ttk
 from ttkthemes import ThemedTk # type: ignore
 from sirilpy import tksiril
 
-sharpenTemp = "sharpen-temp.fits"
-sharpenResult = "sharpen-temp_sharpened.fits"
+sharpenTemp = ""
+sharpenResult = ""
 cosmicClarityLocation = "C:/CosmicClarity"
 sharpenExecutable = "C:/CosmicClarity/setiastrocosmicclarity.exe"
 
@@ -296,6 +296,13 @@ class SirilCosmicClarityInterface:
         try:
             # claim the processing thread
             with self.siril.image_lock():
+                # get the current image filename and construct our new output filename
+                curfilename = self.siril.get_image_filename()
+                basename = os.path.basename(curfilename)
+                directory = os.path.dirname(curfilename)
+                outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-sharp-temp.fits")
+                sharpenTemp = f"{basename.split('.')[0]}-sharp.fits"
+                sharpenResult = f"{basename.split('.')[0]}-sharp_sharpened.fits"
 
                 # save the current image to a temporary fits file and move to input directory
                 if os.path.exists(sharpenTemp):
@@ -308,12 +315,6 @@ class SirilCosmicClarityInterface:
                 success = await self.run_cosmic_clarity()
 
                 if success:
-                    # get the current image filename and construct our new output filename
-                    curfilename = self.siril.get_image_filename()
-                    basename = os.path.basename(curfilename)
-                    directory = os.path.dirname(curfilename)
-                    outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-sharp-temp.fits")
-
                     # grab the sharpened result
                     if os.path.exists(os.path.join(cosmicClarityLocation, "output", sharpenResult)):
                         print(f"Moving {sharpenResult} to {outputfilename}")

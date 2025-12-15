@@ -13,13 +13,13 @@ import threading
 
 import tkinter as tk
 from tkinter import ttk
-from ttkthemes import ThemedTk # type: ignore
+from ttkthemes import ThemedTk  # type: ignore
 from sirilpy import tksiril
-from astropy.io import fits # type: ignore
-import numpy as np # type: ignore
+from astropy.io import fits     # type: ignore
+import numpy as np              # type: ignore
 
-denoiseTemp = "denoise-temp.fits"
-denoiseResult = "denoise-temp_denoised.fits"
+denoiseTemp = ""
+denoiseResult = ""
 cosmicClarityLocation = "C:/CosmicClarity"
 denoiseExecutable = "C:/CosmicClarity/setiastrocosmicclarity_denoise.exe"
 
@@ -245,7 +245,9 @@ class SirilDenoiseInterface:
                 curfilename = self.siril.get_image_filename()
                 basename = os.path.basename(curfilename)
                 directory = os.path.dirname(curfilename)
-                outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-nr-temp.fits")
+                outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-denoise-temp.fits")
+                denoiseTemp = f"{basename.split('.')[0]}-denoise.fits"
+                denoiseResult = f"{basename.split('.')[0]}-denoise_denoised.fits"
 
                 # save the current image to a temporary fits file and move to input directory
                 if os.path.exists(denoiseTemp):

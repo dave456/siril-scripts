@@ -174,7 +174,7 @@ class SirilCosmicClarityInterface:
         stellar_amount_frame.pack(fill=tk.X, pady=5)
         ttk.Label(stellar_amount_frame, text="  Stellar Sharpening:").pack(side=tk.LEFT)
 
-        self.stellar_amount_var = tk.DoubleVar(value=0.65)
+        self.stellar_amount_var = tk.DoubleVar(value=0.55)
         stellar_amount_scale = ttk.Scale(
             stellar_amount_frame,
             from_=0.0,

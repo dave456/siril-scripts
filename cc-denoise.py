@@ -98,7 +98,7 @@ class SirilDenoiseInterface:
             denoise_str_frame = ttk.Frame(strength_frame)
             denoise_str_frame.pack(fill=tk.X, pady=5)
             ttk.Label(denoise_str_frame, text="  Denoise Strength:").pack(side=tk.LEFT)
-            self.denoise_strength_var = tk.DoubleVar(value=0.80)
+            self.denoise_strength_var = tk.DoubleVar(value=0.75)
             denoise_strength_scale = ttk.Scale(
                 denoise_str_frame,
                 from_=0.0,
@@ -119,7 +119,7 @@ class SirilDenoiseInterface:
             color_denoise_str_frame = ttk.Frame(strength_frame)
             color_denoise_str_frame.pack(fill=tk.X, pady=5)
             ttk.Label(color_denoise_str_frame, text="  Color Denoise Strength:").pack(side=tk.LEFT)
-            self.color_denoise_strength_var = tk.DoubleVar(value=0.80)
+            self.color_denoise_strength_var = tk.DoubleVar(value=0.60)
             color_denoise_strength_scale = ttk.Scale(
                 color_denoise_str_frame,
                 from_=0.0,

@@ -71,7 +71,7 @@ class SirilDenoiseInterface:
             denoise_strength_frame.pack(fill=tk.X, pady=5)
 
             ttk.Label(denoise_strength_frame, text="Denoise Strength:").pack(side=tk.LEFT)
-            self.denoise_strength_var = tk.DoubleVar(value=1.0)
+            self.denoise_strength_var = tk.DoubleVar(value=0.80)
             denoise_strength_scale = ttk.Scale(
                 denoise_strength_frame,
                 from_=0.0,

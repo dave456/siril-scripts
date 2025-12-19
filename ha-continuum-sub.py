@@ -21,6 +21,7 @@ user-selected region using AAD (Average Absolute Deviation).
 # 3.0.2 Use expandable component groups for smaller screens
 # 3.0.3 Add about section (collapsed) to further handle small screens
 #       Fixed bug in in OIII/Sii CS generation
+# 3.0.4 Allow user to not select a region and use whole image with warning
 
 
 import sirilpy as s
@@ -45,7 +46,7 @@ from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v3.0.3"
+version = "v3.0.4"
 
 # Simple collapsible group widget
 class CollapsibleGroup(QWidget):
@@ -475,12 +476,17 @@ class SirilCSWindow(QWidget):
             if self.siril.get_image_filename() != self.emission_file:
                 QMessageBox.warning(self, "Invalid Image", "Loaded image does not match selected emission image")
                 return
-        
-            # get the median of the selected region in the current image
+            
+            # get the median of the selected region in the current image, also warn user
+            # if they have not selected a region
             selection = self.siril.get_siril_selection()
             if selection is None or selection[2] <= 0 or selection[3] <= 0:
-                QMessageBox.warning(self, "Invalid Region", "Please select a region in the image in Siril")
-                return
+                shape = self.siril.get_image_shape()
+                selection = (0, 0, shape[2] - 1, shape[1] - 1)
+                self.siril.log("No selection made: Using entire image. This is probably not optimum. "
+                               "It is recommended to make a generous selection around the object of "
+                               "interest.", s.LogColor.SALMON)
+
             c_median = self.siril.get_selection_stats(selection, 0).median
 
         # load the narrowband and continuum data

@@ -1,4 +1,4 @@
-import sirilpy as s                     # type: ignore
+import sirilpy as s
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
 s.ensure_installed("matplotlib")
@@ -12,8 +12,8 @@ import os
 
 import tkinter as tk
 from tkinter import ttk
-from ttkthemes import ThemedTk          # type: ignore
-from sirilpy import tksiril             # type: ignore
+from ttkthemes import ThemedTk
+from sirilpy import tksiril
 
 
 class SirilHistogramInterface:
@@ -36,14 +36,11 @@ class SirilHistogramInterface:
             self.close_dialog()
             return
 
-        if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
-            return
-
         try:
             self.siril.cmd("requires", "1.3.6")
         except s.CommandError:
+            print("Incompatible Siril version")
+            self.siril.disconnect()
             self.close_dialog()
             return
 
@@ -70,6 +67,10 @@ class SirilHistogramInterface:
 
     def OnView(self):
         """Handles the View button click event."""
+        if not self.siril.is_image_loaded():
+            print("No image loaded.")
+            return
+
         data = self.siril.get_image_pixeldata()
         compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True)
 

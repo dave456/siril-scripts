@@ -10,12 +10,12 @@ import sys
 import asyncio
 import subprocess
 import threading
-from astropy.io import fits # type: ignore
-import numpy as np # type: ignore
+from astropy.io import fits
+import numpy as np
 
 import tkinter as tk
 from tkinter import ttk
-from ttkthemes import ThemedTk # type: ignore
+from ttkthemes import ThemedTk
 from sirilpy import tksiril
 
 sharpenTemp = ""

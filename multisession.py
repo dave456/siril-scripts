@@ -8,7 +8,6 @@ def main():
     siril = sirilpy.SirilInterface()
     try:
         siril.connect()
-        print("Connected successfully")
     except sirilpy.SirilConnectionError as e:
         print(f"Connection failed: {e}")
         return

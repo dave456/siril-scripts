@@ -4,7 +4,8 @@
         "C:/Program Files/Siril/python/Lib/site-packages",
         "C:/Program Files/Siril/python/Lib",
         "C:/Program Files/Siril/share",
-        "C:/Program Files/Siril/share/siril/python_module"
+        "C:/Program Files/Siril/share/siril/python_module",
+        "C:/Python312/Lib/site-packages"
     ],
     "files.associations": {
         "*.ssf": "shellscript"

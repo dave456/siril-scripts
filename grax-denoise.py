@@ -19,6 +19,7 @@ from astropy.io import fits
 import numpy as np
 
 import tkinter as tk
+import tkinter.messagebox as mbox
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from sirilpy import tksiril
@@ -95,14 +96,6 @@ class SirilDenoiseInterface:
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=10)
 
-            close_btn = ttk.Button(
-                button_frame,
-                text="Close",
-                command=self.OnClose,
-                style="TButton"
-            )
-            close_btn.pack(side=tk.LEFT, padx=5)
-
             apply_btn = ttk.Button(
                 button_frame,
                 text="Apply",
@@ -114,17 +107,11 @@ class SirilDenoiseInterface:
     def update_denoise_strength(self, *args):
             """Update the strength value in the slider widget to two decimal places."""
             self.denoise_strength_var.set(f"{self.denoise_strength_var.get():.2f}")
-
-    def OnClose(self):
-        """Callback for the Close button."""
-        self.siril.disconnect()
-        self.root.quit()
-        self.root.destroy()
     
     def OnApply(self):
         """Callback for the Apply button."""
         if not self.siril.is_image_loaded():
-            print("No image loaded.")
+            mbox.showwarning("No Image", "No image loaded.")
             return
         self.root.after(0, self.RunApplyChanges)
 
@@ -166,11 +153,10 @@ class SirilDenoiseInterface:
                     os.remove(outputFile)
 
                 # run graxpert
-                print("Running GraXpert denoise...")
-                print(f"Command: {graxpertExecutable} {' '.join(args)}")
+                self.siril.log(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}...")
+                #print(f"Command: {graxpertExecutable} {' '.join(args)}")
                 self.siril.update_progress("GraXpert denoise running...", 0)
-                result = subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
-                print("GraXpert denoise completed.")
+                subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
 
                 # load image back into Siril
                 with fits.open(os.path.basename(outputFile)) as hdul:
@@ -179,6 +165,8 @@ class SirilDenoiseInterface:
                         data = np.array(data, dtype=np.float32)
                     self.siril.undo_save_state(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}")
                     self.siril.set_image_pixeldata(data)
+
+                self.siril.log("GraXpert denoise completed.", sirilpy.LogColor.GREEN)
                 
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running GraXpert: {e}")
@@ -191,6 +179,8 @@ class SirilDenoiseInterface:
                 os.remove(graxpertTemp)
             if os.path.exists(outputFile):
                 os.remove(outputFile)
+
+            # close the dialog after processing??
             self.siril.disconnect()
             self.root.quit()
             self.root.destroy()

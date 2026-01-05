@@ -1,20 +1,26 @@
+#
+# Simplfied GraXpert Denoise interface for Siril
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2024 lindner234 <AT> gmail
+#
+
 import sirilpy
 sirilpy.ensure_installed("ttkthemes")
 sirilpy.ensure_installed("astropy")
 sirilpy.ensure_installed("numpy")
-
 
 import os
 import sys
 import asyncio
 import subprocess
 import threading
-from astropy.io import fits # type: ignore
-import numpy as np # type: ignore
+from astropy.io import fits
+import numpy as np
 
 import tkinter as tk
 from tkinter import ttk
-from ttkthemes import ThemedTk # type: ignore
+from ttkthemes import ThemedTk
 from sirilpy import tksiril
 
 graxpertTemp = ""
@@ -39,21 +45,16 @@ class SirilDenoiseInterface:
             self.close_dialog()
             return
 
-        if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
-            return
-
         try:
             self.siril.cmd("requires", "1.3.6")
         except sirilpy.CommandError:
+            print("Incompatible Siril version")
+            self.siril.disconnect()
             self.close_dialog()
             return
 
         tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
-
-
 
     def create_widgets(self):
             """Creates the GUI widgets for the GraXpert Denoise interface."""
@@ -122,6 +123,9 @@ class SirilDenoiseInterface:
     
     def OnApply(self):
         """Callback for the Apply button."""
+        if not self.siril.is_image_loaded():
+            print("No image loaded.")
+            return
         self.root.after(0, self.RunApplyChanges)
 
     def RunApplyChanges(self):
@@ -146,14 +150,14 @@ class SirilDenoiseInterface:
                 directory = os.path.dirname(curfilename)
                 outputFileNoSuffix = os.path.join(directory, f"{basename.split('.')[0]}-grax_nr-temp")
                 outputFile = outputFileNoSuffix + ".fits"
-                graxpertTemp = f"{basename.split('.')[0]}-denoise.fits"
+                graxpertTemp = f"{basename.split('.')[0]}-temp-in.fits"
 
-                # save the current image to a temporary fits file and move to input directory
-                if os.path.exists(graxpertTemp):
-                    os.remove(graxpertTemp)
-                self.siril.cmd("save", graxpertTemp)
+                # grab the current image data from siril and save to a temporary fits file
+                data = self.siril.get_image_pixeldata()
+                hdu = fits.PrimaryHDU(data)
+                hdu.writeto(graxpertTemp, overwrite=True)
 
-                # Call graxpert.exe to run denoise, graxpert will add the .fits suffix
+                # Call graxpert to run denoise, graxpert will add the .fits suffix
                 args = [graxpertTemp, "-cli", "-cmd", "denoising", "-strength", str(denoise_strength), "-output", outputFileNoSuffix]
 
                 # see if the output file already exists - remove it if it does

@@ -192,7 +192,7 @@ class SirilDenoiseInterface:
             if not self.use_gpu_var.get():
                 command.append("--disable_gpu")
 
-            print(f"Running command: {' '.join(command)}")
+            #print(f"Running command: {' '.join(command)}")
 
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -213,7 +213,7 @@ class SirilDenoiseInterface:
                     match = re.search(r'(\d+\.\d+)%', line)
                     if match:
                         percentage = float(match.group(1))
-                        message = "Seti Astro Cosmic Clarity Denoise progress..."
+                        message = "Denoising..."
                         self.siril.update_progress(message, percentage / 100)
                     else:
                         print(line.strip())
@@ -246,13 +246,13 @@ class SirilDenoiseInterface:
                 basename = os.path.basename(curfilename)
                 directory = os.path.dirname(curfilename)
                 outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-denoise-temp.fits")
-                denoiseTemp = f"{basename.split('.')[0]}-denoise.fits"
-                denoiseResult = f"{basename.split('.')[0]}-denoise_denoised.fits"
+                denoiseTemp = f"{basename.split('.')[0]}-temp.fits"
+                denoiseResult = f"{basename.split('.')[0]}-temp_denoised.fits"
 
-                # save the current image to a temporary fits file and move to input directory
-                if os.path.exists(denoiseTemp):
-                    os.remove(denoiseTemp)
-                self.siril.cmd("save", denoiseTemp)
+                # get current image data and save to temp file
+                data = self.siril.get_image_pixeldata()
+                hdu = fits.PrimaryHDU(data)
+                hdu.writeto(denoiseTemp, overwrite=True)
                 os.rename(denoiseTemp, os.path.join(cosmicClarityLocation, "input", denoiseTemp))
 
                 # kick off the denoise process
@@ -262,7 +262,7 @@ class SirilDenoiseInterface:
                 # load up the file on success and get out of dodge
                 if success:
                     if os.path.exists(os.path.join(cosmicClarityLocation, "output", denoiseResult)):
-                        print(f"Moving {denoiseResult} to {outputfilename}")
+                        #print(f"Moving {denoiseResult} to {outputfilename}")
                         if os.path.isfile(outputfilename):
                             os.remove(outputfilename)
                         os.rename(
@@ -279,7 +279,7 @@ class SirilDenoiseInterface:
                         self.siril.set_image_pixeldata(data)
 
                     self.siril.reset_progress()
-                    self.siril.log("Seti Astro Cosmic Clarity Denoise complete.")
+                    self.siril.log("Denoise complete.", s.LogColor.GREEN)
 
         except Exception as e:
             print(f"Error in apply_changes: {str(e)}")

@@ -247,7 +247,7 @@ class SirilCosmicClarityInterface:
             if self.use_auto_psf_var.get():
                 command.append("--auto_detect_psf")
 
-            print(f"Running command: {' '.join(command)}")
+            #print(f"Running command: {' '.join(command)}")
 
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -268,7 +268,7 @@ class SirilCosmicClarityInterface:
                     match = re.search(r'(\d+\.\d+)%', line)
                     if match:
                         percentage = float(match.group(1))
-                        message = "Seti Astro Cosmic Clarity Sharpen progress..."
+                        message = "Sharpening..."
                         self.siril.update_progress(message, percentage / 100)
                     else:
                         print(line.strip())
@@ -304,10 +304,10 @@ class SirilCosmicClarityInterface:
                 sharpenTemp = f"{basename.split('.')[0]}-sharp.fits"
                 sharpenResult = f"{basename.split('.')[0]}-sharp_sharpened.fits"
 
-                # save the current image to a temporary fits file and move to input directory
-                if os.path.exists(sharpenTemp):
-                    os.remove(sharpenTemp)
-                self.siril.cmd("save", sharpenTemp)
+                # get current image data and save to temp file
+                data = self.siril.get_image_pixeldata()
+                hdu = fits.PrimaryHDU(data)
+                hdu.writeto(sharpenTemp, overwrite=True)
                 os.rename(sharpenTemp, os.path.join(cosmicClarityLocation, "input", sharpenTemp))
 
                 # kick off the sharpening process
@@ -317,7 +317,7 @@ class SirilCosmicClarityInterface:
                 if success:
                     # grab the sharpened result
                     if os.path.exists(os.path.join(cosmicClarityLocation, "output", sharpenResult)):
-                        print(f"Moving {sharpenResult} to {outputfilename}")
+                        #print(f"Moving {sharpenResult} to {outputfilename}")
                         if os.path.isfile(outputfilename):
                             os.remove(outputfilename)
                         os.rename(
@@ -340,7 +340,7 @@ class SirilCosmicClarityInterface:
                         self.siril.set_image_pixeldata(data)
                     
                     self.siril.reset_progress()
-                    self.siril.log("Seti Astro Cosmic Clarity Sharpening complete.")
+                    self.siril.log("Sharpening complete.", s.LogColor.GREEN)
 
         except Exception as e:
             print(f"Error in apply_changes: {str(e)}")

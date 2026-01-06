@@ -24,8 +24,6 @@ from tkinter import ttk
 from ttkthemes import ThemedTk
 from sirilpy import tksiril
 
-sharpenTemp = ""
-sharpenResult = ""
 cosmicClarityLocation = "C:/CosmicClarity"
 sharpenExecutable = "C:/CosmicClarity/setiastrocosmicclarity.exe"
 
@@ -35,6 +33,7 @@ class SirilCosmicClarityInterface:
         self.root = root
         self.root.title(f"Cosmic Clarity Sharpening")
         self.root.resizable(False, False)
+        self.root.attributes("-topmost", True)
         self.style = tksiril.standard_style()
 
         # Initialize Siril connection
@@ -47,20 +46,7 @@ class SirilCosmicClarityInterface:
             self.close_dialog()
             return
 
-        if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
-            return
-
-        try:
-            self.siril.cmd("requires", "1.3.6")
-        except s.CommandError:
-            self.close_dialog()
-            return
-
         tksiril.match_theme_to_siril(self.root, self.siril)
-
-        # Create widgets
         self.create_widgets()
 
     def update_stellar_amount_display(self, *args):
@@ -77,7 +63,6 @@ class SirilCosmicClarityInterface:
 
     def create_widgets(self):
         """Create the main dialog widgets."""
-
         # Main frame
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -211,12 +196,14 @@ class SirilCosmicClarityInterface:
 
     def OnApply(self):
         """Handle apply button click."""
+        if not self.siril.is_image_loaded():
+            self.siril.error_messagebox("No image loaded")
+            return
         self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
 
     def RunApplyChanges(self):
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
-        # TODO: we should really disable the apply and close buttons here to prevent multiple clicks
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def run_cosmic_clarity(self):
@@ -241,7 +228,6 @@ class SirilCosmicClarityInterface:
                 command.append("--auto_detect_psf")
 
             #print(f"Running command: {' '.join(command)}")
-
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -350,15 +336,10 @@ class SirilCosmicClarityInterface:
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
 
-            # close the dialog after processing??
-            #self.siril.disconnect()
-            #self.root.quit()
-            #self.root.destroy()
-
 def main():
     try:
         root = ThemedTk()
-        app = SirilCosmicClarityInterface(root)
+        SirilCosmicClarityInterface(root)
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

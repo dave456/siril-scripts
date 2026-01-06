@@ -19,12 +19,10 @@ from astropy.io import fits
 import numpy as np
 
 import tkinter as tk
-import tkinter.messagebox as mbox
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from sirilpy import tksiril
 
-graxpertTemp = ""
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
 
 
@@ -34,6 +32,7 @@ class SirilDenoiseInterface:
         self.root = root
         self.root.title(f"GraXpert Denoise")
         self.root.resizable(False, False)
+        self.root.attributes("-topmost", True)
         self.style = tksiril.standard_style()
 
         # Initialize Siril connection
@@ -46,20 +45,11 @@ class SirilDenoiseInterface:
             self.close_dialog()
             return
 
-        try:
-            self.siril.cmd("requires", "1.3.6")
-        except sirilpy.CommandError:
-            print("Incompatible Siril version")
-            self.siril.disconnect()
-            self.close_dialog()
-            return
-
         tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
     def create_widgets(self):
             """Creates the GUI widgets for the GraXpert Denoise interface."""
-            
             # Main frame
             main_frame = ttk.Frame(self.root, padding=10)
             main_frame.pack(fill=tk.BOTH, expand=True)
@@ -92,17 +82,16 @@ class SirilDenoiseInterface:
             # Add trace to update display when slider changes
             self.denoise_strength_var.trace_add("write", self.update_denoise_strength)        
         
-            # Action Buttons
+            # Apply Button
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=10)
-
-            apply_btn = ttk.Button(
+            self.apply_btn = ttk.Button(
                 button_frame,
                 text="Apply",
                 command=self.OnApply,
                 style="TButton"
             )
-            apply_btn.pack(side=tk.LEFT, padx=5)
+            self.apply_btn.pack(side=tk.LEFT, padx=5)
 
     def update_denoise_strength(self, *args):
             """Update the strength value in the slider widget to two decimal places."""
@@ -111,8 +100,9 @@ class SirilDenoiseInterface:
     def OnApply(self):
         """Callback for the Apply button."""
         if not self.siril.is_image_loaded():
-            mbox.showwarning("No Image", "No image loaded.")
+            self.siril.error_messagebox("No image loaded")
             return
+        self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
 
     def RunApplyChanges(self):
@@ -180,15 +170,13 @@ class SirilDenoiseInterface:
             if os.path.exists(outputFile):
                 os.remove(outputFile)
 
-            # close the dialog after processing??
-            #self.siril.disconnect()
-            #self.root.quit()
-            #self.root.destroy()
+            # always modify tkinter widgets from the main thread    
+            self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
 
 def main():
     try:
         root = ThemedTk()
-        app = SirilDenoiseInterface(root)
+        SirilDenoiseInterface(root)
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

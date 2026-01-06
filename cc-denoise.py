@@ -24,11 +24,8 @@ from sirilpy import tksiril
 from astropy.io import fits
 import numpy as np
 
-denoiseTemp = ""
-denoiseResult = ""
 cosmicClarityLocation = "C:/CosmicClarity"
 denoiseExecutable = "C:/CosmicClarity/setiastrocosmicclarity_denoise.exe"
-
 
 class SirilDenoiseInterface:
     # constructor
@@ -36,7 +33,7 @@ class SirilDenoiseInterface:
         self.root = root
         self.root.title(f"Cosmic Clarity Denoise")
         self.root.resizable(False, False)
-
+        self.root.attributes("-topmost", True)
         self.style = tksiril.standard_style()
 
         # Initialize Siril connection
@@ -46,17 +43,6 @@ class SirilDenoiseInterface:
             self.siril.connect()
         except s.SirilConnectionError:
             self.siril.error_messagebox("Failed to connect to Siril")
-            self.close_dialog()
-            return
-
-        if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
-            return
-
-        try:
-            self.siril.cmd("requires", "1.3.6")
-        except s.CommandError:
             self.close_dialog()
             return
 
@@ -125,7 +111,7 @@ class SirilDenoiseInterface:
             color_denoise_str_frame = ttk.Frame(strength_frame)
             color_denoise_str_frame.pack(fill=tk.X, pady=5)
             ttk.Label(color_denoise_str_frame, text=" Color:", width=12).pack(side=tk.LEFT)
-            self.color_denoise_strength_var = tk.DoubleVar(value=0.60)
+            self.color_denoise_strength_var = tk.DoubleVar(value=0.55)
             color_denoise_strength_scale = ttk.Scale(
                 color_denoise_str_frame,
                 from_=0.0,
@@ -142,10 +128,9 @@ class SirilDenoiseInterface:
             ).pack(side=tk.LEFT)
             self.color_denoise_strength_var.trace_add("write", self.update_color_denoise_strength)
         
-            # Action Buttons
+            # Apply Button
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=10)
-
             self.apply_btn = ttk.Button(
                 button_frame,
                 text="Apply",
@@ -164,6 +149,9 @@ class SirilDenoiseInterface:
 
     def OnApply(self):
         """Callback for the Apply button."""
+        if not self.siril.is_image_loaded():
+            self.siril.error_messagebox("No image loaded")
+            return
         self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
 
@@ -185,7 +173,6 @@ class SirilDenoiseInterface:
                 command.append("--disable_gpu")
 
             #print(f"Running command: {' '.join(command)}")
-
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -289,11 +276,6 @@ class SirilDenoiseInterface:
 
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
-
-            # close dialog when complete?
-            #self.siril.disconnect()
-            #self.root.quit()
-            #self.root.destroy()
 
 def main():
     try:

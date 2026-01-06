@@ -1,3 +1,9 @@
+#
+# Simplfied Cosmic Clarity sharpening interface for Siril
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
+#
 
 import sirilpy as s
 s.ensure_installed("ttkthemes")
@@ -125,10 +131,10 @@ class SirilCosmicClarityInterface:
         strength_frame = ttk.LabelFrame(main_frame, text="Strength", padding=10)
         strength_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        # Non-Stellar Strength
+        # Non-Stellar PSF
         non_stellar_str_frame = ttk.Frame(strength_frame)
         non_stellar_str_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_str_frame, text="  Non-Stellar Strength:").pack(side=tk.LEFT)
+        ttk.Label(non_stellar_str_frame, text=" Non-Stellar PSF:", width=20).pack(side=tk.LEFT)
 
         self.non_stellar_psf_var = tk.DoubleVar(value=3.1)
         non_stellar_psf_scale = ttk.Scale(
@@ -150,7 +156,7 @@ class SirilCosmicClarityInterface:
         # Non-Stellar Sharpening Amount
         non_stellar_amount_frame = ttk.Frame(strength_frame)
         non_stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_amount_frame, text="  Non-Stellar Sharpening:").pack(side=tk.LEFT)
+        ttk.Label(non_stellar_amount_frame, text=" Non-Stellar Amount:", width=20).pack(side=tk.LEFT)
 
         self.non_stellar_amount_var = tk.DoubleVar(value=0.85)
         non_stellar_strength_scale = ttk.Scale(
@@ -172,7 +178,7 @@ class SirilCosmicClarityInterface:
         # Stellar Sharpening Amount
         stellar_amount_frame = ttk.Frame(strength_frame)
         stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(stellar_amount_frame, text="  Stellar Sharpening:").pack(side=tk.LEFT)
+        ttk.Label(stellar_amount_frame, text=" Stellar Amount:", width=20).pack(side=tk.LEFT)
 
         self.stellar_amount_var = tk.DoubleVar(value=0.55)
         stellar_amount_scale = ttk.Scale(
@@ -195,31 +201,18 @@ class SirilCosmicClarityInterface:
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(pady=10)
 
-        close_btn = ttk.Button(
-            button_frame,
-            text="Close",
-            command=self.OnClose,
-            style="TButton"
-        )
-        close_btn.pack(side=tk.LEFT, padx=5)
-
-        apply_btn = ttk.Button(
+        self.apply_btn = ttk.Button(
             button_frame,
             text="Apply",
             command=self.OnApply,
             style="TButton"
         )
-        apply_btn.pack(side=tk.LEFT, padx=5)
+        self.apply_btn.pack(side=tk.LEFT, padx=5)
 
     def OnApply(self):
         """Handle apply button click."""
+        self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
-
-    def OnClose(self):
-        """Handle close button click."""
-        self.siril.disconnect()
-        self.root.quit()
-        self.root.destroy()
 
     def RunApplyChanges(self):
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
@@ -353,24 +346,14 @@ class SirilCosmicClarityInterface:
                 os.remove(os.path.join(cosmicClarityLocation, "input", sharpenTemp))
             if os.path.exists(outputfilename):
                 os.remove(outputfilename)
-            self.siril.disconnect()
-            self.root.quit()
-            self.root.destroy()
 
-def AddHistory(filename, history_text):
-    """Adds a history record to the header of a FITS file.
+            # always modify tkinter widgets from the main thread    
+            self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
 
-    Args:
-        filename (str): Path to the FITS file.
-        history_text (str): The history text to add.
-    """
-    try:
-        with fits.open(filename, mode='update') as hdul:
-            hdul[0].header.add_history(history_text)
-    except FileNotFoundError:
-        print(f"Error: The file '{filename}' was not found.")
-    except Exception as e:
-         print(f"An error occurred: {e}")
+            # close the dialog after processing??
+            #self.siril.disconnect()
+            #self.root.quit()
+            #self.root.destroy()
 
 def main():
     try:

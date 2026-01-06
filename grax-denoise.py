@@ -2,7 +2,7 @@
 # Simplfied GraXpert Denoise interface for Siril
 #
 # SPDX-License-Identifier: GPL-3.0
-# Author: Dave Lindner (c) 2024 lindner234 <AT> gmail
+# Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
 #
 
 import sirilpy
@@ -181,9 +181,9 @@ class SirilDenoiseInterface:
                 os.remove(outputFile)
 
             # close the dialog after processing??
-            self.siril.disconnect()
-            self.root.quit()
-            self.root.destroy()
+            #self.siril.disconnect()
+            #self.root.quit()
+            #self.root.destroy()
 
 def main():
     try:

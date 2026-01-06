@@ -1,3 +1,9 @@
+#
+# Simplfied Cosmic Clarity Denoise interface for Siril
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
+#
 
 import sirilpy as s
 s.ensure_installed("ttkthemes")
@@ -91,13 +97,13 @@ class SirilDenoiseInterface:
                 ).pack(anchor=tk.W, pady=2)
 
             # Strength Frame
-            strength_frame = ttk.LabelFrame(main_frame, text="Strength Settings", padding=10)
+            strength_frame = ttk.LabelFrame(main_frame, text="Denoise Strength", padding=10)
             strength_frame.pack(fill=tk.X, padx=5, pady=5)
 
             # Denoise Strength
             denoise_str_frame = ttk.Frame(strength_frame)
             denoise_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(denoise_str_frame, text="  Denoise Strength:").pack(side=tk.LEFT)
+            ttk.Label(denoise_str_frame, text=" Luminance:", width=12).pack(side=tk.LEFT)
             self.denoise_strength_var = tk.DoubleVar(value=0.75)
             denoise_strength_scale = ttk.Scale(
                 denoise_str_frame,
@@ -118,7 +124,7 @@ class SirilDenoiseInterface:
             # Color Denoise Strength
             color_denoise_str_frame = ttk.Frame(strength_frame)
             color_denoise_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(color_denoise_str_frame, text="  Color Denoise Strength:").pack(side=tk.LEFT)
+            ttk.Label(color_denoise_str_frame, text=" Color:", width=12).pack(side=tk.LEFT)
             self.color_denoise_strength_var = tk.DoubleVar(value=0.60)
             color_denoise_strength_scale = ttk.Scale(
                 color_denoise_str_frame,
@@ -140,21 +146,13 @@ class SirilDenoiseInterface:
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=10)
 
-            close_btn = ttk.Button(
-                button_frame,
-                text="Close",
-                command=self.OnClose,
-                style="TButton"
-            )
-            close_btn.pack(side=tk.LEFT, padx=5)
-
-            apply_btn = ttk.Button(
+            self.apply_btn = ttk.Button(
                 button_frame,
                 text="Apply",
                 command=self.OnApply,
                 style="TButton"
             )
-            apply_btn.pack(side=tk.LEFT, padx=5)
+            self.apply_btn.pack(side=tk.LEFT, padx=5)
 
     def update_denoise_strength(self, *args):
         """Update denoise strength value to two decimal places."""
@@ -162,17 +160,11 @@ class SirilDenoiseInterface:
 
     def update_color_denoise_strength(self, *args):
         """Update color denoise strength value to two decimal places."""
-        # TODO: we should really disable the apply and close buttons here to prevent multiple clicks
         self.color_denoise_strength_var.set(f"{self.color_denoise_strength_var.get():.2f}")
-
-    def OnClose(self):
-        """Callback for the Close button."""
-        self.siril.disconnect()
-        self.root.quit()
-        self.root.destroy()
 
     def OnApply(self):
         """Callback for the Apply button."""
+        self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
 
     def RunApplyChanges(self):
@@ -256,7 +248,9 @@ class SirilDenoiseInterface:
                 os.rename(denoiseTemp, os.path.join(cosmicClarityLocation, "input", denoiseTemp))
 
                 # kick off the denoise process
-                self.siril.update_progress("Seti Astro Cosmic Clarity Denoise starting...", 0)
+                msg = f"CC denoise: mode='{self.denoise_mode_var.get()}' str={self.denoise_strength_var.get():.2f} color str={self.color_denoise_strength_var.get():.2f}"
+                self.siril.log(msg)
+                self.siril.update_progress("Cosmic Clarity Denoise starting...", 0)
                 success = await self.run_cosmic_clarity()
 
                 # load up the file on success and get out of dodge
@@ -275,7 +269,7 @@ class SirilDenoiseInterface:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        self.siril.undo_save_state(f"CC denoise: mode='{self.denoise_mode_var.get()}' str={self.denoise_strength_var.get():.2f} color str={self.color_denoise_strength_var.get():.2f}")
+                        self.siril.undo_save_state(msg)
                         self.siril.set_image_pixeldata(data)
 
                     self.siril.reset_progress()
@@ -292,14 +286,19 @@ class SirilDenoiseInterface:
                 os.remove(os.path.join(cosmicClarityLocation, "input", denoiseTemp))
             if os.path.exists(outputfilename):
                 os.remove(outputfilename)
-            self.siril.disconnect()
-            self.root.quit()
-            self.root.destroy()
+
+            # always modify tkinter widgets from the main thread    
+            self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
+
+            # close dialog when complete?
+            #self.siril.disconnect()
+            #self.root.quit()
+            #self.root.destroy()
 
 def main():
     try:
         root = ThemedTk()
-        app = SirilDenoiseInterface(root)
+        SirilDenoiseInterface(root)
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

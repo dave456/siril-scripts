@@ -22,6 +22,7 @@ user-selected region using AAD (Average Absolute Deviation).
 # 3.0.3 Add about section (collapsed) to further handle small screens
 #       Fixed bug in in OIII/Sii CS generation
 # 3.0.4 Allow user to not select a region and use whole image with warning
+# 3.0.5 CR: Reduce vertical spacing for more compact interface
 
 
 import sirilpy as s
@@ -46,7 +47,7 @@ from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v3.0.4"
+version = "v3.0.5"
 
 # Simple collapsible group widget
 class CollapsibleGroup(QWidget):
@@ -84,7 +85,7 @@ class SirilCSWindow(QWidget):
         """ Constructor for our UI class """
         super().__init__()
         self.setWindowTitle(f"Continuum Subtraction {version}")
-        self.setFixedWidth(760)
+        self.setFixedWidth(660)
 
         # Siril connection
         self.siril = s.SirilInterface()
@@ -123,7 +124,7 @@ class SirilCSWindow(QWidget):
         about_group = CollapsibleGroup("ℹ️ About  ►")
         about_group.toggle.setChecked(False)  # start collapsed
         about_layout = about_group.content.layout()
-        about_layout.setContentsMargins(8, 8, 8, 8)
+        about_layout.setContentsMargins(8, 4, 8, 4)
 
         desc = QTextEdit()
         desc.setReadOnly(True)
@@ -141,7 +142,7 @@ class SirilCSWindow(QWidget):
             "<i>Note:</i> Ensure that the component FITS files are aligned, unstretched and in "
             "32-bit float format for best results."
         )
-        desc.setFixedHeight(175)
+        desc.setFixedHeight(120)
         desc.setStyleSheet("background: transparent; border: none;")
         about_layout.addWidget(desc)
         layout.addWidget(about_group)
@@ -149,8 +150,8 @@ class SirilCSWindow(QWidget):
         # Components selection group
         comps_group = CollapsibleGroup("Components  ▼")
         comps_layout = comps_group.content.layout()
-        comps_layout.setContentsMargins(8, 8, 8, 8)
-        comps_layout.setSpacing(12)
+        comps_layout.setContentsMargins(8, 4, 8, 4)
+        comps_layout.setSpacing(6)
 
         # create a box for our columns
         comps_box = QGroupBox()
@@ -158,9 +159,9 @@ class SirilCSWindow(QWidget):
         comps_group.content.layout().addWidget(comps_box)
 
         left_col = QVBoxLayout()
-        left_col.setSpacing(6)
+        left_col.setSpacing(3)
         right_col = QVBoxLayout()
-        right_col.setSpacing(6)
+        right_col.setSpacing(3)
 
         # ui constants
         COMPONENT_LABEL_WIDTH = 10
@@ -215,8 +216,8 @@ class SirilCSWindow(QWidget):
         # CS generation group
         csgen_group = CollapsibleGroup("Continuum Subtraction Generation  ▼")
         csgen_layout = csgen_group.content.layout()
-        csgen_layout.setContentsMargins(8, 8, 8, 8)
-        csgen_layout.setSpacing(12)
+        csgen_layout.setContentsMargins(8, 4, 8, 4)
+        csgen_layout.setSpacing(6)
         
         # create a box for the components
         csgen_box = QGroupBox()
@@ -273,8 +274,8 @@ class SirilCSWindow(QWidget):
         # Blending group
         blend_group = CollapsibleGroup("Blending Options  ▼")
         blend_layout = blend_group.content.layout()
-        blend_layout.setContentsMargins(8, 8, 8, 8)
-        blend_layout.setSpacing(12)
+        blend_layout.setContentsMargins(8, 4, 8, 4)
+        blend_layout.setSpacing(6)
 
         # create a box for the components
         blend_box = QGroupBox()
@@ -293,11 +294,11 @@ class SirilCSWindow(QWidget):
         self.q_slider.valueChanged.connect(lambda v: self.q_value_label.setText(f"{v / 100:.2f}"))
         blend_box.layout().addLayout(q_row)
 
-        blend_box.layout().addSpacing(15)  # fudge for spacing
+        blend_box.layout().addSpacing(6)  # fudge for spacing
 
         # ui constants
         COLOR_LABEL_WIDTH = 35
-        VALUE_LABEL_WIDTH = 30
+        VALUE_LABEL_WIDTH = 40
 
         # optional red channel blending slider
         red_slider_row = QHBoxLayout()

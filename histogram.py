@@ -1,3 +1,10 @@
+#
+# Display color histogram of the currently loaded image in Siril
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2025 lindner234 <AT> gmail
+#
+
 import sirilpy as s
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
@@ -17,6 +24,7 @@ from sirilpy import tksiril
 
 
 class SirilHistogramInterface:
+    """ Simple GUI toolbar like button for generating histograms. Always on top."""
     # constructor
     def __init__(self, root):
         self.root = root
@@ -59,11 +67,18 @@ class SirilHistogramInterface:
 
         close_btn = ttk.Button(
             button_frame,
-            text="View Histogram",
+            text="Histogram",
             command=self.OnView,
             style="TButton"
         )
         close_btn.pack(side=tk.LEFT, padx=5)
+
+        self.linear_chk = ttk.Checkbutton(
+            button_frame,
+            text="Zoom",
+            style="TCheckbutton"
+        )
+        self.linear_chk.pack(side=tk.LEFT, padx=5)
 
     def OnView(self):
         """Handles the View button click event."""
@@ -72,9 +87,13 @@ class SirilHistogramInterface:
             return
 
         data = self.siril.get_image_pixeldata()
-        compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True)
+        linear = False
+        if self.linear_chk.instate(['selected']):
+            print("Displaying histogram in linear mode.")
+            linear = True
+        compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True, linear=linear)
 
-def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False):
+def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False, linear_pct=99.1):
     #data = fits.getdata(fits_path)
 
     # Normalize layout: (3,H,W) -> (H,W,3)
@@ -128,17 +147,37 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
         for spine in ax.spines.values():
             spine.set_color(text_color)
 
-    x = np.arange(bins)
-    for i, color in enumerate(fill_colors):
-        hist = cv2.calcHist([img_bgr], [i], None, [bins], [0, 256]).flatten()
-        ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
-        ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
-    ax.set_xlim([0, bins - 1])
+    # If linear==True, zoom the histogram to the left side where linear FITS data usually resides.
+    # We compute the cutoff on the 8-bit image by percentile (default 99.5) and restrict the
+    # plotted range to [0, cutoff]. This ignores clipping to the right which is typically
+    # uninteresting for linear raw data visualisation.
+    if linear:
+        # compute cutoff on the 8-bit pixel values, but ignore zero/background pixels
+        all_vals = img_rgb[..., :3].ravel()
+        nonzero = all_vals[all_vals > 0]
+        if nonzero.size > 0:
+            cutoff = int(np.percentile(nonzero, linear_pct))
+        else:
+            cutoff = int(np.percentile(all_vals, linear_pct))
+        cutoff = max(1, min(255, cutoff))
+
+        nbins = cutoff + 1
+        x = np.arange(nbins)
+        for i, color in enumerate(fill_colors):
+            hist = cv2.calcHist([img_bgr], [i], None, [nbins], [0, nbins]).flatten()
+            ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
+            ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
+        ax.set_xlim([0, cutoff])
+    else:
+        x = np.arange(bins)
+        for i, color in enumerate(fill_colors):
+            hist = cv2.calcHist([img_bgr], [i], None, [bins], [0, 256]).flatten()
+            ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
+            ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
+        ax.set_xlim([0, bins - 1])
 
     # Title and labels: ensure visibility in dark mode
     ax.set_title(f'{title}', color=text_color)
-    #ax.set_xlabel('Pixel value (0-255)', color=text_color)
-    #ax.set_ylabel('Count', color=text_color)
 
     plt.tight_layout()
     if save_path:

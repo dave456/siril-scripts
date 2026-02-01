@@ -8,33 +8,33 @@ cd ../process
 # Calibrate Light Frames
 calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=dark -cfa -equalize_cfa
 
-# Extract Ha and OIII
-seqextract_HaOIII pp_light -resample=ha
+# Extract Ha and OIII channels from the sequence
+seqextract_HaOIII pp_light
 
-# Align Ha lights
-register Ha_pp_light
+# Register Ha channel
+# we drizzle the Ha channel at a 2x scale, because it has half the size of the OIII channel
+register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.0 -kernel=square
 
-# Stack calibrated Ha lights to Ha_stack (temporary)
-stack r_Ha_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_00001
+# Register OIII channel
+# we do NOT drizzle the OIII channel
+register OIII_pp_light -interp=lanczos4
 
-# Align OIII lights
-register OIII_pp_light
+# Stack OIII channel
+stack r_OIII_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_01
 
-# Stack calibrated OIII lights to OIII_stack (temporary)
-stack r_OIII_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_00002
+# Stack Ha channel
+stack r_Ha_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_02
 
-# Align the result images, small shifts and chromatic aberrations can occur
+# Align and crop the result images
 register results -2pass
-seqapplyreg results
+seqapplyreg results -framing=min
 
-# Renorm OIII to Ha using PixelMath
-#pm $r_results_00002$*mad($r_results_00001$)/mad($r_results_00002$)-mad($r_results_00001$)/mad($r_results_00002$)*median($r_results_00002$)+median($r_results_00001$)
-#save ../OIII_normalized_results
-load results_00002
+# Save OIII final result
+load results_01
 save ../OIII_results
 
 # Save Ha final result
-load r_results_00001
+load r_results_02
 save ../Ha_results
 
 close

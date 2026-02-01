@@ -1,3 +1,9 @@
+#
+# Simplfied Cosmic Clarity darkstar interface for Siril
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
+#
 
 import sirilpy as s
 s.ensure_installed("ttkthemes")
@@ -14,10 +20,10 @@ import shutil
 
 import tkinter as tk
 from tkinter import ttk
-from ttkthemes import ThemedTk  # type: ignore
+from ttkthemes import ThemedTk
 from sirilpy import tksiril
-from astropy.io import fits     # type: ignore
-import numpy as np              # type: ignore
+from astropy.io import fits
+import numpy as np
 
 cosmicClarityLocation = "C:/CosmicClarity"
 darkstarExecutable = "C:/CosmicClarity/setiastrocosmicclarity_darkstar.exe"
@@ -27,8 +33,8 @@ class SirilDarkstarInterface:
     def __init__(self, root):
         self.root = root
         self.root.title(f"Cosmic Clarity Darkstar")
+        self.root.attributes("-topmost", True)
         self.root.resizable(False, False)
-
         self.style = tksiril.standard_style()
 
         # Initialize Siril connection
@@ -38,17 +44,6 @@ class SirilDarkstarInterface:
             self.siril.connect()
         except s.SirilConnectionError:
             self.siril.error_messagebox("Failed to connect to Siril")
-            self.close_dialog()
-            return
-
-        if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
-            self.close_dialog()
-            return
-
-        try:
-            self.siril.cmd("requires", "1.3.6")
-        except s.CommandError:
             self.close_dialog()
             return
 
@@ -133,15 +128,6 @@ class SirilDarkstarInterface:
             # Action Buttons
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=10)
-
-            close_btn = ttk.Button(
-                button_frame,
-                text="Close",
-                command=self.OnClose,
-                style="TButton"
-            )
-            close_btn.pack(side=tk.LEFT, padx=5)
-
             apply_btn = ttk.Button(
                 button_frame,
                 text="Apply",
@@ -152,12 +138,6 @@ class SirilDarkstarInterface:
 
     def update_chunk_size(self, *args):
         self.chunk_size.set(f"{self.chunk_size.get()}")
-
-    def OnClose(self):
-        """Callback for the Close button."""
-        self.siril.disconnect()
-        self.root.quit()
-        self.root.destroy()
 
     def OnApply(self):
         """Callback for the Apply button."""
@@ -184,7 +164,6 @@ class SirilDarkstarInterface:
                 command.append("--show_extracted_stars")
 
             print(f"Running command: {' '.join(command)}")
-
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -284,9 +263,6 @@ class SirilDarkstarInterface:
                 os.remove(os.path.join(cosmicClarityLocation, "output", starlessResult))
             if os.path.exists(os.path.join(cosmicClarityLocation, "output", starmaskResult)):
                 os.remove(os.path.join(cosmicClarityLocation, "output", starmaskResult))
-            self.siril.disconnect()
-            self.root.quit()
-            self.root.destroy()
 
 def main():
     try:

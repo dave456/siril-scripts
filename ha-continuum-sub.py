@@ -23,6 +23,7 @@ user-selected region using AAD (Average Absolute Deviation).
 #       Fixed bug in in OIII/Sii CS generation
 # 3.0.4 Allow user to not select a region and use whole image with warning
 # 3.0.5 CR: Reduce vertical spacing for more compact interface
+# 3.0.6 Copy FITS header to generated files, add history entry for CS operation
 
 
 import sirilpy as s
@@ -47,7 +48,7 @@ from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v3.0.5"
+version = "v3.0.6"
 
 # Simple collapsible group widget
 class CollapsibleGroup(QWidget):
@@ -456,8 +457,15 @@ class SirilCSWindow(QWidget):
             # Ensure output shape (3, height, width) as Siril expects planes-first format
             combined_data = np.array([new_rdata, new_gdata, new_bdata], dtype=np.float32)
 
+            # grab the fits header from one of the input files (R)
+            with fits.open(self.r_file) as hdul:
+                header = hdul[0].header
+
+            c = self.c_slider.value() / 10000.0
+            header.add_history(f"Continuum subtracted: emission={os.path.basename(self.emission_file)} c={c:.4f}")
+
             out_name = "CS-RGB-blended.fits"
-            hdu = fits.PrimaryHDU(combined_data)
+            hdu = fits.PrimaryHDU(combined_data, header=header)
             hdu.writeto(out_name, overwrite=True)
 
             # Load into Siril

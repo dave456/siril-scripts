@@ -2,7 +2,6 @@
 # Stack with our preferred options
 # Assumes flat_stacked and dark_stacked have already been created in masters
 #
-
 requires 1.3.4
 
 #
@@ -22,5 +21,4 @@ seqstat light ../stats.csv
 calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=dark -cfa -equalize_cfa -debayer
 
 # Align lights
-register pp_light
-
+register pp_light -interp=lanczos4

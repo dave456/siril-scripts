@@ -1,3 +1,9 @@
+#
+# Custom script for extracting and processing Ha and OIII channels
+#
+# SPDX-License-Identifier: GPL-3.0
+# Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
+#
 requires 1.3.4
 
 # Convert Light Frames
@@ -12,12 +18,15 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 seqextract_HaOIII pp_light
 
 # Register Ha channel
-# we drizzle the Ha channel at a 2x scale, because it has half the size of the OIII channel
-register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.0 -kernel=square
+# We drizzle the Ha channel at a 2x scale, because it has half the size of the 
+# OIII channel. Using a pixfrac > 1.0 helps to reduce noise with some loss of resolution.
+register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.1 -kernel=square
 
 # Register OIII channel
-# we do NOT drizzle the OIII channel
-register OIII_pp_light -interp=lanczos4
+# Using lanczos4 interpolation for the OIII channel can sometimes yield better results.
+# Generally, drizzle seems to provide better results, but lanczos4 is left here as an option.
+#register OIII_pp_light -interp=lanczos4
+register OIII_pp_light -drizzle -scale=1.0 -pixfrac=1.0 -kernel=square
 
 # Stack OIII channel
 stack r_OIII_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_01

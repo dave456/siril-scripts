@@ -127,7 +127,7 @@ class SirilAlignInterface:
 
         finally:
             if os.getcwd() != old_cwd:
-                self.siril.cmd("cd", old_cwd)
+                self.siril.cmd("cd", "..")
             if os.path.exists(ALIGN_WORKING_DIR):
                 shutil.rmtree(ALIGN_WORKING_DIR)
 

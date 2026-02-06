@@ -73,36 +73,28 @@ class SirilHistogramInterface:
         )
         close_btn.pack(side=tk.LEFT, padx=5)
 
-        self.linear_chk = ttk.Checkbutton(
-            button_frame,
-            text="Zoom",
-            style="TCheckbutton"
-        )
-        self.linear_chk.pack(side=tk.LEFT, padx=5)
-
     def OnView(self):
-        """Handles the View button click event."""
+        """Handles the Histogram button click event and creates the histogram plot."""
         if not self.siril.is_image_loaded():
             print("No image loaded.")
             return
 
         data = self.siril.get_image_pixeldata()
-        linear = False
-        if self.linear_chk.instate(['selected']):
-            print("Displaying histogram in linear mode.")
-            linear = True
-        compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True, linear=linear)
+        # TODO: get siril theme and pass dark=True/False accordingly
+        compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True)
 
-def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False, linear_pct=99.1):
-    #data = fits.getdata(fits_path)
+def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False):
+    """Compute and plot the color histogram of the given image data."""
 
     # Normalize layout: (3,H,W) -> (H,W,3)
     if data.ndim == 3 and data.shape[0] in (3, 4):
         data = np.transpose(data, (1, 2, 0))
+
     # If grayscale, replicate channels
     if data.ndim == 2:
         data = np.stack([data] * 3, axis=-1)
 
+    # tweak for sirils odd channel layout
     if data.ndim != 3 or data.shape[2] < 3:
         raise ValueError('Expected a 3-channel color image in FITS (H,W,3) or (3,H,W).')
 
@@ -122,9 +114,7 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
     img_bgr = img_rgb[..., ::-1]
 
     # Apply dark mode style if requested
-    # Choose visible colors for fill and outlines depending on theme
     if dark:
-        # prefer a dark gray background instead of pure black
         bg_color = '#2b2b2b'  # dark gray
         plt.style.use('dark_background')
         fill_colors = ('deepskyblue', 'lime', 'salmon')
@@ -147,37 +137,26 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
         for spine in ax.spines.values():
             spine.set_color(text_color)
 
-    # If linear==True, zoom the histogram to the left side where linear FITS data usually resides.
-    # We compute the cutoff on the 8-bit image by percentile (default 99.5) and restrict the
-    # plotted range to [0, cutoff]. This ignores clipping to the right which is typically
-    # uninteresting for linear raw data visualisation.
-    if linear:
-        # compute cutoff on the 8-bit pixel values, but ignore zero/background pixels
-        all_vals = img_rgb[..., :3].ravel()
-        nonzero = all_vals[all_vals > 0]
-        if nonzero.size > 0:
-            cutoff = int(np.percentile(nonzero, linear_pct))
-        else:
-            cutoff = int(np.percentile(all_vals, linear_pct))
-        cutoff = max(1, min(255, cutoff))
+    ax.ticklabel_format(style='plain', axis='y')
 
-        nbins = cutoff + 1
-        x = np.arange(nbins)
-        for i, color in enumerate(fill_colors):
-            hist = cv2.calcHist([img_bgr], [i], None, [nbins], [0, nbins]).flatten()
-            ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
-            ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
-        ax.set_xlim([0, cutoff])
-    else:
-        x = np.arange(bins)
-        for i, color in enumerate(fill_colors):
-            hist = cv2.calcHist([img_bgr], [i], None, [bins], [0, 256]).flatten()
-            ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
-            ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
-        ax.set_xlim([0, bins - 1])
+    x = np.arange(bins)
+    for i, color in enumerate(fill_colors):
+        hist = cv2.calcHist([img_bgr], [i], None, [bins], [0, 256]).flatten()
 
-    # Title and labels: ensure visibility in dark mode
+        # normalize histogram counts to fit within 16-bit range for better visualization
+        hist = hist.astype(np.float64)
+        hist = (hist / hist.max()) * 65535.0 if hist.max() > 0 else hist
+        ax.set_ylim(0, 65535)
+
+        ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
+        ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
+    ax.set_xlim([0, bins - 1])
+
+    # set text and title colors based on dark mode
     ax.set_title(f'{title}', color=text_color)
+
+    # hide x-axis values and ticks - we've normalized to 0-255 bins, so the x-axix values are meaningless
+    ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
 
     plt.tight_layout()
     if save_path:

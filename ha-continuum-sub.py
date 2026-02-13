@@ -452,7 +452,6 @@ class SirilCSWindow(QWidget):
             new_rdata = r_data + (cs_data - cs_median) * q * red_adjust
             new_gdata = g_data + (cs_data - cs_median) * q * green_adjust
             new_bdata = b_data + (cs_data - cs_median) * q * blue_adjust
-            combined_data = np.array([new_rdata, new_gdata, new_bdata])
 
             # Ensure output shape (3, height, width) as Siril expects planes-first format
             combined_data = np.array([new_rdata, new_gdata, new_bdata], dtype=np.float32)

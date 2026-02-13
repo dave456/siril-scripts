@@ -2,14 +2,10 @@
 # Builds flats using synthetic bias
 #
 
-requires 1.2.0
-
 cd flats
 convert flat -out=../process
-
-# calibrate using our computed synthetic bias
 cd ../process
 
-# calibrate flat using synthetic bias
+# calibrate flat using our computed synthetic bias
 calibrate flat -bias="=64*$OFFSET"
 stack pp_flat rej 3 3 -norm=mul -out=../masters/flat_stacked

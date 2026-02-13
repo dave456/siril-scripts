@@ -86,7 +86,7 @@ class SirilHistogramInterface:
 def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False):
     """Compute and plot the color histogram of the given image data."""
 
-    # Normalize layout: (3,H,W) -> (H,W,3)
+    # tweak for sirils odd channel layout
     if data.ndim == 3 and data.shape[0] in (3, 4):
         data = np.transpose(data, (1, 2, 0))
 
@@ -94,7 +94,7 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
     if data.ndim == 2:
         data = np.stack([data] * 3, axis=-1)
 
-    # tweak for sirils odd channel layout
+    # sanity check for rgb or grayscale images - we expect 3 channels in the last dimension after the above adjustments
     if data.ndim != 3 or data.shape[2] < 3:
         raise ValueError('Expected a 3-channel color image in FITS (H,W,3) or (3,H,W).')
 

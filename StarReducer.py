@@ -50,7 +50,13 @@ class StarReducerWindow(QWidget):
             QMessageBox.critical(self, "Error", "Siril version requirement not met")
             self.siril.disconnect()
             self.close()
-            return
+            raise Exception("ivalid siril version")
+        
+        if not self.siril.is_image_loaded():
+            QMessageBox.critical(self, "Error", "No image loaded")
+            self.siril.disconnect()
+            self.close()
+            raise Exception("no image loaded")
         
         self.starless_file_path = ""
         self.CreateWidgets()

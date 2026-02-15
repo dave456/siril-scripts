@@ -22,6 +22,7 @@ import numpy as np
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
+import sv_ttk
 from sirilpy import tksiril
 
 cosmicClarityLocation = "C:/CosmicClarity"
@@ -42,11 +43,11 @@ class SirilCosmicClarityInterface:
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril")
+            self.siril.error_messagebox("Failed to connect to Siril!", True)
             self.close_dialog()
             return
 
-        tksiril.match_theme_to_siril(self.root, self.siril)
+        #tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
     def update_stellar_amount_display(self, *args):
@@ -340,6 +341,7 @@ def main():
     try:
         root = ThemedTk()
         SirilCosmicClarityInterface(root)
+        sv_ttk.set_theme("dark")
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

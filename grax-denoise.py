@@ -143,7 +143,7 @@ class SirilDenoiseInterface:
                     os.remove(outputFile)
 
                 # run graxpert
-                self.siril.log(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}...")
+                self.siril.log(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}")
                 #print(f"Command: {graxpertExecutable} {' '.join(args)}")
                 self.siril.update_progress("GraXpert denoise running...", 0)
                 subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
@@ -156,19 +156,21 @@ class SirilDenoiseInterface:
                     self.siril.undo_save_state(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}")
                     self.siril.set_image_pixeldata(data)
 
+                self.siril.update_progress("GraXpert denoise running...", 1)
                 self.siril.log("GraXpert denoise completed.", sirilpy.LogColor.GREEN)
                 
         except subprocess.CalledProcessError as e:
-            print(f"Error occurred while running GraXpert: {e}")
+            self.siril.log(f"Error occurred while running GraXpert: {e}", sirilpy.LogColor.SALMON)
         
         except Exception as e:
-            print(f"Error in denoise: {str(e)}")
+            self.siril.log(f"Error in script: {str(e)}", sirilpy.LogColor.SALMON)
 
         finally:
             if os.path.exists(graxpertTemp):
                 os.remove(graxpertTemp)
             if os.path.exists(outputFile):
                 os.remove(outputFile)
+            self.siril.reset_progress()
 
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))

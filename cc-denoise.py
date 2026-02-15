@@ -20,6 +20,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
+import sv_ttk
 from sirilpy import tksiril
 from astropy.io import fits
 import numpy as np
@@ -42,11 +43,11 @@ class SirilDenoiseInterface:
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril")
+            self.siril.error_messagebox("Failed to connect to Siril!", True)
             self.close_dialog()
             return
 
-        tksiril.match_theme_to_siril(self.root, self.siril)
+        #tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
     def create_widgets(self):
@@ -150,7 +151,7 @@ class SirilDenoiseInterface:
     def OnApply(self):
         """Callback for the Apply button."""
         if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
+            self.siril.error_messagebox("No image loaded!", True)
             return
         self.apply_btn.state(['disabled'])
         self.root.after(0, self.RunApplyChanges)
@@ -281,6 +282,7 @@ def main():
     try:
         root = ThemedTk()
         SirilDenoiseInterface(root)
+        sv_ttk.set_theme("dark")
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

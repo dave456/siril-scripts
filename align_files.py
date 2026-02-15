@@ -15,6 +15,7 @@ import shutil
 import tkinter as tk
 from tkinter import ttk, filedialog
 from ttkthemes import ThemedTk
+import sv_ttk
 from sirilpy import tksiril
 
 ALIGN_WORKING_DIR = "align_working"
@@ -37,7 +38,7 @@ class SirilAlignInterface:
             self.close_dialog()
             return
 
-        tksiril.match_theme_to_siril(self.root, self.siril)
+        #tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
     def create_widgets(self):
@@ -61,8 +62,18 @@ class SirilAlignInterface:
         files_frame.pack(fill=tk.BOTH, expand=True)
 
         # files list
-        self.file_listbox = ttk.Treeview(files_frame, columns=("name",), show="tree", selectmode="extended", height=10)
+        # Use the tree column ("#0") for filenames and remove the unused extra column.
+        self.file_listbox = ttk.Treeview(files_frame, show="tree", selectmode="extended", height=10)
         self.file_listbox.pack(pady=5, fill=tk.BOTH, expand=True)
+        # Ensure the tree column uses available width so long filenames aren't truncated.
+        self.file_listbox.column("#0", width=400, anchor="w", stretch=True)
+        # Auto-resize column to widget width on configure events.
+        def _resize_tree(event):
+            try:
+                self.file_listbox.column("#0", width=event.width)
+            except Exception:
+                pass
+        self.file_listbox.bind("<Configure>", _resize_tree)
 
         # align button - DO IT
         self.align_button = ttk.Button(main_frame, text="Align Images", command=self.align_files)
@@ -135,6 +146,7 @@ def main():
     try:
         root = ThemedTk()
         SirilAlignInterface(root)
+        sv_ttk.set_theme("dark")
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

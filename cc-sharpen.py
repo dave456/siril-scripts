@@ -9,6 +9,7 @@ import sirilpy as s
 s.ensure_installed("ttkthemes")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
+s.ensure_installed("sv_ttk")
 
 import os
 import re
@@ -47,28 +48,112 @@ class SirilCosmicClarityInterface:
             self.close_dialog()
             return
 
-        #tksiril.match_theme_to_siril(self.root, self.siril)
-        self.create_widgets()
+        self.CreateWidgets()
 
-    def update_stellar_amount_display(self, *args):
-        value = self.stellar_amount_var.get()
-        self.stellar_amount_var.set(f"{value:.2f}")
-
-    def update_non_stellar_amount_display(self, *args):
-        value = self.non_stellar_amount_var.get()
-        self.non_stellar_amount_var.set(f"{value:.2f}")
-
-    def update_non_stellar_psf_display(self, *args):
-        value = self.non_stellar_psf_var.get()
-        self.non_stellar_psf_var.set(f"{value:.1f}")
-
-    def create_widgets(self):
+    def CreateWidgets(self):
         """Create the main dialog widgets."""
         # Main frame
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Options Mode Frame
+        # Sharpening mode group box
+        mode_frame = ttk.LabelFrame(main_frame, text="Sharpening Mode", padding=10)
+        mode_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        # Mode radio box
+        self.sharpening_mode_var = tk.StringVar(value="Both")
+        sharpening_modes = ["Stellar Only", "Non-Stellar Only", "Both"]
+        for mode in sharpening_modes:
+            ttk.Radiobutton(
+                mode_frame,
+                text=mode,
+                variable=self.sharpening_mode_var,
+                value=mode
+            ).pack(anchor=tk.W, pady=2)
+
+        # Sharpening strength group box
+        strength_frame = ttk.LabelFrame(main_frame, text="Sharpening Strength", padding=10)
+        strength_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        # non-stellar psf frame
+        non_stellar_str_frame = ttk.Frame(strength_frame)
+        non_stellar_str_frame.pack(fill=tk.X, pady=5)
+
+        # non-stellar psf slider
+        ttk.Label(non_stellar_str_frame, text=" Non-Stellar PSF:", width=20).pack(side=tk.LEFT)
+        self.non_stellar_psf_var = tk.DoubleVar(value=3.0)
+        non_stellar_psf_scale = ttk.Scale(
+            non_stellar_str_frame,
+            from_=1.0,
+            to=8.0,
+            orient=tk.HORIZONTAL,
+            variable=self.non_stellar_psf_var,
+            length=200
+        )
+        non_stellar_psf_scale.pack(side=tk.LEFT, padx=10, expand=True)
+        self.non_stellar_psf_var.trace_add("write", self.UpdateNonStellarPSF)
+
+        # non-stellar psf display
+        self.non_stellar_psf_display = tk.StringVar(value=f"{self.non_stellar_psf_var.get():.1f}")
+        ttk.Label(
+            non_stellar_str_frame,
+            textvariable=self.non_stellar_psf_display,
+            width=5
+        ).pack(side=tk.LEFT)
+        
+        # non-stellar strength frame
+        non_stellar_str_frame = ttk.Frame(strength_frame)
+        non_stellar_str_frame.pack(fill=tk.X, pady=5)
+
+        # non-stellar strength slider
+        ttk.Label(non_stellar_str_frame, text=" Non-Stellar Strength:", width=20).pack(side=tk.LEFT)
+        self.non_stellar_str_var = tk.DoubleVar(value=0.85)
+        non_stellar_str_scale = ttk.Scale(
+            non_stellar_str_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            variable=self.non_stellar_str_var,
+            length=200
+        )
+        non_stellar_str_scale.pack(side=tk.LEFT, padx=10, expand=True)
+        self.non_stellar_str_var.trace_add("write", self.UpdateNonStellarStr)
+
+        # non-stellar strength display
+        self.non_stellar_str_display = tk.StringVar(value=f"{self.non_stellar_str_var.get():.2f}")
+        ttk.Label(
+            non_stellar_str_frame,
+            textvariable=self.non_stellar_str_display,
+            width=5
+        ).pack(side=tk.LEFT)
+
+        # stellar strength frame
+        stellar_str_frame = ttk.Frame(strength_frame)
+        stellar_str_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(stellar_str_frame, text=" Stellar Strength:", width=20).pack(side=tk.LEFT)
+
+        # stellar strength slider
+        self.stellar_str_var = tk.DoubleVar(value=0.55)
+        stellar_str_scale = ttk.Scale(
+            stellar_str_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            variable=self.stellar_str_var,
+            length=200
+        )
+        stellar_str_scale.pack(side=tk.LEFT, padx=10, expand=True)
+        self.stellar_str_var.trace_add("write", self.UpdateStellarStr)
+
+        # stellar strength display
+        self.stellar_str_display = tk.StringVar(value=f"{self.stellar_str_var.get():.2f}")
+        ttk.Label(
+            stellar_str_frame,
+            textvariable=self.stellar_str_display,
+            width=5
+        ).pack(side=tk.LEFT)
+        
+        # options frame
         options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
         options_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -81,7 +166,7 @@ class SirilCosmicClarityInterface:
             style="TCheckbutton"
         ).pack(anchor=tk.W, pady=2)
 
-        # Sharpen channels separately Checkbox
+        # Sharpen channels separately checkbox
         self.sharpen_channels_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             options_frame,
@@ -90,7 +175,7 @@ class SirilCosmicClarityInterface:
             style="TCheckbutton"
         ).pack(anchor=tk.W, pady=2)
 
-        # Use automatic PSF Checkbox
+        # Use automatic PSF checkbox
         self.use_auto_psf_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             options_frame,
@@ -98,95 +183,10 @@ class SirilCosmicClarityInterface:
             variable=self.use_auto_psf_var,
             style="TCheckbutton",
         ).pack(anchor=tk.W, pady=2)
-    
-        # Sharpening Mode Frame
-        mode_frame = ttk.LabelFrame(main_frame, text="Sharpening Mode", padding=10)
-        mode_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        self.sharpening_mode_var = tk.StringVar(value="Both")
-        sharpening_modes = ["Stellar Only", "Non-Stellar Only", "Both"]
-        for mode in sharpening_modes:
-            ttk.Radiobutton(
-                mode_frame,
-                text=mode,
-                variable=self.sharpening_mode_var,
-                value=mode
-            ).pack(anchor=tk.W, pady=2)
-
-        # Sharpening Strength Frame
-        strength_frame = ttk.LabelFrame(main_frame, text="Strength", padding=10)
-        strength_frame.pack(fill=tk.X, padx=5, pady=5)
-
-        # Non-Stellar PSF
-        non_stellar_str_frame = ttk.Frame(strength_frame)
-        non_stellar_str_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_str_frame, text=" Non-Stellar PSF:", width=20).pack(side=tk.LEFT)
-
-        self.non_stellar_psf_var = tk.DoubleVar(value=3.1)
-        non_stellar_psf_scale = ttk.Scale(
-            non_stellar_str_frame,
-            from_=1.0,
-            to=8.0,
-            orient=tk.HORIZONTAL,
-            variable=self.non_stellar_psf_var,
-            length=200
-        )
-        non_stellar_psf_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        ttk.Label(
-            non_stellar_str_frame,
-            textvariable=self.non_stellar_psf_var,
-            width=5
-        ).pack(side=tk.LEFT)
-        self.non_stellar_psf_var.trace_add("write", self.update_non_stellar_psf_display)
-
-        # Non-Stellar Sharpening Amount
-        non_stellar_amount_frame = ttk.Frame(strength_frame)
-        non_stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(non_stellar_amount_frame, text=" Non-Stellar Amount:", width=20).pack(side=tk.LEFT)
-
-        self.non_stellar_amount_var = tk.DoubleVar(value=0.85)
-        non_stellar_strength_scale = ttk.Scale(
-            non_stellar_amount_frame,
-            from_=0.0,
-            to=1.0,
-            orient=tk.HORIZONTAL,
-            variable=self.non_stellar_amount_var,
-            length=200
-        )
-        non_stellar_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        ttk.Label(
-            non_stellar_amount_frame,
-            textvariable=self.non_stellar_amount_var,
-            width=5
-        ).pack(side=tk.LEFT)
-        self.non_stellar_amount_var.trace_add("write", self.update_non_stellar_amount_display)
-
-        # Stellar Sharpening Amount
-        stellar_amount_frame = ttk.Frame(strength_frame)
-        stellar_amount_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(stellar_amount_frame, text=" Stellar Amount:", width=20).pack(side=tk.LEFT)
-
-        self.stellar_amount_var = tk.DoubleVar(value=0.55)
-        stellar_amount_scale = ttk.Scale(
-            stellar_amount_frame,
-            from_=0.0,
-            to=1.0,
-            orient=tk.HORIZONTAL,
-            variable=self.stellar_amount_var,
-            length=200
-        )
-        stellar_amount_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        ttk.Label(
-            stellar_amount_frame,
-            textvariable=self.stellar_amount_var,
-            width=5
-        ).pack(side=tk.LEFT)
-        self.stellar_amount_var.trace_add("write", self.update_stellar_amount_display)
-
-        # Action Buttons
+        # Buttons
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(pady=10)
-
         self.apply_btn = ttk.Button(
             button_frame,
             text="Apply",
@@ -194,6 +194,18 @@ class SirilCosmicClarityInterface:
             style="TButton"
         )
         self.apply_btn.pack(side=tk.LEFT, padx=5)
+
+    def UpdateNonStellarPSF(self, *args):
+        """Non-stellar PSF slider callback"""
+        self.non_stellar_psf_display.set(f"{self.non_stellar_psf_var.get():.1f}")
+
+    def UpdateNonStellarStr(self, *args):
+        """Non-stellar strength slider callback"""
+        self.non_stellar_str_display.set(f"{self.non_stellar_str_var.get():.2f}")
+
+    def UpdateStellarStr(self, *args):
+        """Stellar strength slider callback"""
+        self.stellar_str_display.set(f"{self.stellar_str_var.get():.2f}")
 
     def OnApply(self):
         """Handle apply button click."""
@@ -207,16 +219,17 @@ class SirilCosmicClarityInterface:
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
-    async def run_cosmic_clarity(self):
+    async def RunCosmicClarity(self):
         """Run Cosmic Clarity"""
         try:
-            # setiastro sharpen doesn't like it if you don't pass in all the arguments, even if you don't use them
+            # setiastro sharpen doesn't like it if you don't pass in all the arguments, 
+            # even if you don't use them, e.g. PSF strength
             command = [
                 sharpenExecutable,
                 f"--sharpening_mode={self.sharpening_mode_var.get()}",
-                f"--stellar_amount={self.stellar_amount_var.get()}",
-                f"--nonstellar_amount={self.non_stellar_amount_var.get()}",
-                f"--nonstellar_strength={self.non_stellar_psf_var.get()}",
+                f"--stellar_amount={self.stellar_str_display.get()}",
+                f"--nonstellar_amount={self.non_stellar_str_display.get()}",
+                f"--nonstellar_strength={self.non_stellar_psf_display.get()}",
             ]
 
             if not self.use_gpu_var.get():
@@ -269,7 +282,7 @@ class SirilCosmicClarityInterface:
             return True
 
         except Exception as e:
-            print(f"Error in run_cosmic_clarity: {str(e)}")
+            self.siril.log(f"Error in run_cosmic_clarity: {str(e)}", s.LogColor.SALMON)
             return False
 
     async def ApplyChanges(self):
@@ -292,7 +305,7 @@ class SirilCosmicClarityInterface:
 
                 # kick off the sharpening process
                 self.siril.update_progress("Seti Astro Cosmic Clarity Sharpen starting...", 0)
-                success = await self.run_cosmic_clarity()
+                success = await self.RunCosmicClarity()
 
                 if success:
                     # grab the sharpened result
@@ -312,19 +325,17 @@ class SirilCosmicClarityInterface:
                             data = np.array(data, dtype=np.float32)
                         save_state = f"CC sharpening: '{self.sharpening_mode_var.get()},'"
                         if self.sharpening_mode_var.get() == "Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f" stellar={self.stellar_amount_var.get()},"
+                            save_state += f" stellar={self.stellar_str_var.get()},"
                         if self.sharpening_mode_var.get() == "Non-Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f" non-stellar={self.non_stellar_amount_var.get()}, str={self.non_stellar_psf_var.get()}"
+                            save_state += f" non-stellar={self.non_stellar_str_var.get()}, str={self.non_stellar_psf_var.get()}"
                         save_state = save_state.rstrip(",")
                         self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
                     
-                    self.siril.reset_progress()
                     self.siril.log("Sharpening complete.", s.LogColor.GREEN)
 
         except Exception as e:
-            print(f"Error in apply_changes: {str(e)}")
-            self.siril.update_progress(f"Error: {str(e)}", 0)
+            self.siril.log(f"Error in apply_changes: {str(e)}", s.LogColor.SALMON)
 
         finally:
             if os.path.exists(sharpenTemp):
@@ -336,6 +347,7 @@ class SirilCosmicClarityInterface:
 
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
+            self.siril.reset_progress()
 
 def main():
     try:

@@ -9,6 +9,7 @@ import sirilpy
 sirilpy.ensure_installed("ttkthemes")
 sirilpy.ensure_installed("astropy")
 sirilpy.ensure_installed("numpy")
+sirilpy.ensure_installed("sv_ttk")
 
 import os
 import sys
@@ -21,6 +22,7 @@ import numpy as np
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
+import sv_ttk
 from sirilpy import tksiril
 
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
@@ -45,57 +47,59 @@ class SirilDenoiseInterface:
             self.close_dialog()
             return
 
-        tksiril.match_theme_to_siril(self.root, self.siril)
-        self.create_widgets()
+        #tksiril.match_theme_to_siril(self.root, self.siril)
+        self.CreateWidgets()
 
-    def create_widgets(self):
-            """Creates the GUI widgets for the GraXpert Denoise interface."""
-            # Main frame
-            main_frame = ttk.Frame(self.root, padding=10)
-            main_frame.pack(fill=tk.BOTH, expand=True)
+    def CreateWidgets(self):
+        """Creates the GUI widgets for the GraXpert Denoise interface."""
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-            # Strength Frame
-            options_frame = ttk.LabelFrame(main_frame, text="", padding=10)
-            options_frame.pack(fill=tk.X, padx=5, pady=5)
+        # group box
+        options_frame = ttk.LabelFrame(main_frame, text="", padding=10)
+        options_frame.pack(fill=tk.X, padx=5, pady=5)
 
-            # Denoise Strength
-            denoise_strength_frame = ttk.Frame(options_frame)
-            denoise_strength_frame.pack(fill=tk.X, pady=5)
+        # strength frame
+        strength_frame = ttk.Frame(options_frame)
+        strength_frame.pack(fill=tk.X, pady=5)
 
-            ttk.Label(denoise_strength_frame, text="Denoise Strength:").pack(side=tk.LEFT)
-            self.denoise_strength_var = tk.DoubleVar(value=0.80)
-            denoise_strength_scale = ttk.Scale(
-                denoise_strength_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.denoise_strength_var,
-                length=200
-            )
-            denoise_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            ttk.Label(
-                denoise_strength_frame,
-                textvariable=self.denoise_strength_var,
-                width=5
-            ).pack(side=tk.LEFT)
-
-            # Add trace to update display when slider changes
-            self.denoise_strength_var.trace_add("write", self.update_denoise_strength)        
+        # strength slider
+        ttk.Label(strength_frame, text="Denoise Strength:").pack(side=tk.LEFT)
+        self.strength_var = tk.DoubleVar(value=0.80)
+        strength_scale = ttk.Scale(
+            strength_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            variable=self.strength_var,
+            length=200
+        )
+        strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
+        self.strength_var.trace_add("write", self.UpdateStrength)
         
-            # Apply Button
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(pady=10)
-            self.apply_btn = ttk.Button(
-                button_frame,
-                text="Apply",
-                command=self.OnApply,
-                style="TButton"
-            )
-            self.apply_btn.pack(side=tk.LEFT, padx=5)
+        # strength display
+        self.denoise_strength_display = tk.StringVar(value=f"{self.strength_var.get():.2f}")
+        ttk.Label(
+            strength_frame,
+            textvariable=self.denoise_strength_display,
+            width=5
+        ).pack(side=tk.LEFT)
+        
+        # Apply Button
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+        self.apply_btn = ttk.Button(
+            button_frame,
+            text="Apply",
+            command=self.OnApply,
+            style="TButton"
+        )
+        self.apply_btn.pack(side=tk.LEFT, padx=5)
 
-    def update_denoise_strength(self, *args):
-            """Update the strength value in the slider widget to two decimal places."""
-            self.denoise_strength_var.set(f"{self.denoise_strength_var.get():.2f}")
+    def UpdateStrength(self, *args):
+        """Update the display StringVar to two decimal places"""
+        self.denoise_strength_display.set(f"{self.strength_var.get():.2f}")
     
     def OnApply(self):
         """Callback for the Apply button."""
@@ -119,7 +123,7 @@ class SirilDenoiseInterface:
             with self.siril.image_lock():
                 
                 # Read user input values
-                denoise_strength = self.denoise_strength_var.get()
+                denoise_strength = self.strength_var.get()
 
                 # get the current image filename and construct our new output filename
                 curfilename = self.siril.get_image_filename()
@@ -179,6 +183,7 @@ def main():
     try:
         root = ThemedTk()
         SirilDenoiseInterface(root)
+        sv_ttk.set_theme("dark")
         root.mainloop()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")

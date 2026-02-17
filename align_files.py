@@ -7,6 +7,7 @@
 
 import sirilpy as s
 s.ensure_installed("ttkthemes")
+s.ensure_installed("sv_ttk")
 
 import sys
 import os
@@ -50,12 +51,10 @@ class SirilAlignInterface:
         # add/remove 
         add_remove_frame = ttk.Frame(main_frame, padding=10)
         add_remove_frame.pack(fill=tk.X)
-        self.add_button = ttk.Button(add_remove_frame, text="➕", command=self.add_files, width=4)
+        self.add_button = ttk.Button(add_remove_frame, text="➕", command=self.AddFiles, width=4)
         self.add_button.pack(side=tk.LEFT, padx=5)
-        self.add_button.tooltip = tksiril.create_tooltip(self.add_button, "Add files to align")
-        self.remove_button = ttk.Button(add_remove_frame, text="➖", command=self.remove_files, width=4)
+        self.remove_button = ttk.Button(add_remove_frame, text="➖", command=self.RemoveFiles, width=4)
         self.remove_button.pack(side=tk.LEFT, padx=5)
-        self.remove_button.tooltip = tksiril.create_tooltip(self.remove_button, "Remove selected files from list")
 
         # files frame
         files_frame = ttk.LabelFrame(main_frame, text="Files to Align", padding=10)
@@ -76,10 +75,10 @@ class SirilAlignInterface:
         self.file_listbox.bind("<Configure>", _resize_tree)
 
         # align button - DO IT
-        self.align_button = ttk.Button(main_frame, text="Align Images", command=self.align_files)
+        self.align_button = ttk.Button(main_frame, text="Align Images", command=self.AlignFiles)
         self.align_button.pack(pady=10)
 
-    def add_files(self):
+    def AddFiles(self):
         """Callback for add button - open file dialog to select files to align."""
         files = filedialog.askopenfilenames(parent=self.root, title="Select files to align",
                                             filetypes=[("FITS files", ("*.fit", "*.fits")), ("All files", "*.*")])
@@ -87,17 +86,16 @@ class SirilAlignInterface:
         for file in files:
             if file in self.files_to_align:
                 continue  # avoid duplicates
-
             self.files_to_align.append(file)
             self.file_listbox.insert("", "end", text=os.path.basename(file))
 
-    def remove_files(self):
+    def RemoveFiles(self):
         """Callback for remove button - remove selected files from list."""
         selected = self.file_listbox.selection()
         for item in selected:
             self.file_listbox.delete(item)
 
-    def align_files(self):
+    def AlignFiles(self):
         """Callback for align button - perform alignment on selected files."""
         try:
             old_cwd = os.getcwd()

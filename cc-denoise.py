@@ -9,6 +9,7 @@ import sirilpy as s
 s.ensure_installed("ttkthemes")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
+s.ensure_installed("sv_ttk")
 
 import os
 import re
@@ -48,15 +49,82 @@ class SirilDenoiseInterface:
             return
 
         #tksiril.match_theme_to_siril(self.root, self.siril)
-        self.create_widgets()
+        self.CreateWidgets()
 
-    def create_widgets(self):
+    def CreateWidgets(self):
             """Create the GUI widgets for the Cosmic Clarity Denoise interface."""
             # Main frame
             main_frame = ttk.Frame(self.root, padding=10)
             main_frame.pack(fill=tk.BOTH, expand=True)
 
-            # Options Mode Frame
+            # Denoise Mode Group Box
+            mode_frame = ttk.LabelFrame(main_frame, text="Denoise Mode", padding=10)
+            mode_frame.pack(fill=tk.X, padx=5, pady=5)
+
+            # Denoising modes
+            self.denoise_mode_var = tk.StringVar(value="full")
+            denoise_modes = ["luminance", "full", "separate"]
+            for mode in denoise_modes:
+                ttk.Radiobutton(
+                    mode_frame,
+                    text=mode.capitalize(),
+                    variable=self.denoise_mode_var,
+                    value=mode
+                ).pack(anchor=tk.W, pady=2)
+
+            # Strength frame
+            strength_frame = ttk.LabelFrame(main_frame, text="Denoise Strength", padding=10)
+            strength_frame.pack(fill=tk.X, padx=5, pady=5)
+
+            # Luminance strength slider
+            luminance_str_frame = ttk.Frame(strength_frame)
+            luminance_str_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(luminance_str_frame, text=" Luminance:", width=12).pack(side=tk.LEFT)
+            self.lum_strength_var = tk.DoubleVar(value=0.75)
+            denoise_strength_scale = ttk.Scale(
+                luminance_str_frame,
+                from_=0.0,
+                to=1.0,
+                orient=tk.HORIZONTAL,
+                variable=self.lum_strength_var,
+                length=200
+            )
+            denoise_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
+            self.lum_strength_var.trace_add("write", self.UpdateLuminanceStr)
+
+            # Luminance strength display
+            self.lum_strength_display = tk.StringVar(value=f"{self.lum_strength_var.get():.2f}")
+            ttk.Label(
+                luminance_str_frame,
+                textvariable=self.lum_strength_display,
+                width=5
+            ).pack(side=tk.LEFT)
+
+            # Color strength slider
+            color_str_frame = ttk.Frame(strength_frame)
+            color_str_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(color_str_frame, text=" Color:", width=12).pack(side=tk.LEFT)
+            self.color_strength_var = tk.DoubleVar(value=0.55)
+            color_strength_scale = ttk.Scale(
+                color_str_frame,
+                from_=0.0,
+                to=1.0,
+                orient=tk.HORIZONTAL,
+                variable=self.color_strength_var,
+                length=200
+            )
+            color_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
+            self.color_strength_var.trace_add("write", self.UpdateColorStr)
+
+            # Color strength display
+            self.color_strength_display = tk.StringVar(value=f"{self.color_strength_var.get():.2f}")
+            ttk.Label(
+                color_str_frame,
+                textvariable=self.color_strength_display,
+                width=5
+            ).pack(side=tk.LEFT)
+            
+            # Options Mode Group Box
             options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
             options_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -68,66 +136,6 @@ class SirilDenoiseInterface:
                 variable=self.use_gpu_var,
                 style="TCheckbutton"
             ).pack(anchor=tk.W, pady=2)
-
-            # Denoise Mode Frame
-            mode_frame = ttk.LabelFrame(main_frame, text="Denoise Mode", padding=10)
-            mode_frame.pack(fill=tk.X, padx=5, pady=5)
-
-            self.denoise_mode_var = tk.StringVar(value="full")
-            denoise_modes = ["luminance", "full", "separate"]
-            for mode in denoise_modes:
-                ttk.Radiobutton(
-                    mode_frame,
-                    text=mode.capitalize(),
-                    variable=self.denoise_mode_var,
-                    value=mode
-                ).pack(anchor=tk.W, pady=2)
-
-            # Strength Frame
-            strength_frame = ttk.LabelFrame(main_frame, text="Denoise Strength", padding=10)
-            strength_frame.pack(fill=tk.X, padx=5, pady=5)
-
-            # Denoise Strength
-            denoise_str_frame = ttk.Frame(strength_frame)
-            denoise_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(denoise_str_frame, text=" Luminance:", width=12).pack(side=tk.LEFT)
-            self.denoise_strength_var = tk.DoubleVar(value=0.75)
-            denoise_strength_scale = ttk.Scale(
-                denoise_str_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.denoise_strength_var,
-                length=200
-            )
-            denoise_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            ttk.Label(
-                denoise_str_frame,
-                textvariable=self.denoise_strength_var,
-                width=5
-            ).pack(side=tk.LEFT)
-            self.denoise_strength_var.trace_add("write", self.update_denoise_strength)
-
-            # Color Denoise Strength
-            color_denoise_str_frame = ttk.Frame(strength_frame)
-            color_denoise_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(color_denoise_str_frame, text=" Color:", width=12).pack(side=tk.LEFT)
-            self.color_denoise_strength_var = tk.DoubleVar(value=0.55)
-            color_denoise_strength_scale = ttk.Scale(
-                color_denoise_str_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.color_denoise_strength_var,
-                length=200
-            )
-            color_denoise_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            ttk.Label(
-                color_denoise_str_frame,
-                textvariable=self.color_denoise_strength_var,
-                width=5
-            ).pack(side=tk.LEFT)
-            self.color_denoise_strength_var.trace_add("write", self.update_color_denoise_strength)
         
             # Apply Button
             button_frame = ttk.Frame(main_frame)
@@ -140,13 +148,13 @@ class SirilDenoiseInterface:
             )
             self.apply_btn.pack(side=tk.LEFT, padx=5)
 
-    def update_denoise_strength(self, *args):
-        """Update denoise strength value to two decimal places."""
-        self.denoise_strength_var.set(f"{self.denoise_strength_var.get():.2f}")
+    def UpdateLuminanceStr(self, *args):
+        """Update luminance strength display value to two decimal places."""
+        self.lum_strength_display.set(f"{self.lum_strength_var.get():.2f}")
 
-    def update_color_denoise_strength(self, *args):
-        """Update color denoise strength value to two decimal places."""
-        self.color_denoise_strength_var.set(f"{self.color_denoise_strength_var.get():.2f}")
+    def UpdateColorStr(self, *args):
+        """Update color denoise strength display value to two decimal places."""
+        self.color_strength_display.set(f"{self.color_strength_var.get():.2f}")
 
     def OnApply(self):
         """Callback for the Apply button."""
@@ -160,20 +168,20 @@ class SirilDenoiseInterface:
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
-    async def run_cosmic_clarity(self):
+    async def RunCosmicClarity(self):
         """Run Cosmic Clarity denoise."""
         try:
             command = [
                 denoiseExecutable,
                 f"--denoise_mode={self.denoise_mode_var.get()}",
-                f"--denoise_strength={self.denoise_strength_var.get()}",
-                f"--color_denoise_strength={self.color_denoise_strength_var.get()}"
+                f"--denoise_strength={self.lum_strength_display.get()}",
+                f"--color_denoise_strength={self.color_strength_display.get()}"
             ]
 
             if not self.use_gpu_var.get():
                 command.append("--disable_gpu")
 
-            #print(f"Running command: {' '.join(command)}")
+            print(f"Running command: {' '.join(command)}")
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -236,10 +244,10 @@ class SirilDenoiseInterface:
                 os.rename(denoiseTemp, os.path.join(cosmicClarityLocation, "input", denoiseTemp))
 
                 # kick off the denoise process
-                msg = f"CC denoise: mode='{self.denoise_mode_var.get()}' str={self.denoise_strength_var.get():.2f} color str={self.color_denoise_strength_var.get():.2f}"
+                msg = f"CC denoise: mode='{self.denoise_mode_var.get()}' str={self.lum_strength_var.get():.2f} color str={self.color_strength_var.get():.2f}"
                 self.siril.log(msg)
                 self.siril.update_progress("Cosmic Clarity Denoise starting...", 0)
-                success = await self.run_cosmic_clarity()
+                success = await self.RunCosmicClarity()
 
                 # load up the file on success and get out of dodge
                 if success:

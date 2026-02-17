@@ -9,6 +9,7 @@ import sirilpy
 sirilpy.ensure_installed("ttkthemes")
 sirilpy.ensure_installed("astropy")
 sirilpy.ensure_installed("numpy")
+sirilpy.ensure_installed("sv_ttk")
 
 import os
 import sys
@@ -47,15 +48,15 @@ class SirilBGEInterface:
             return
 
         #tksiril.match_theme_to_siril(self.root, self.siril)
-        self.create_widgets()
+        self.CreateWidgets()
 
-    def create_widgets(self):
+    def CreateWidgets(self):
             """Creates the GUI widgets for the GraXpert BGE interface."""
             # Main frame
             main_frame = ttk.Frame(self.root, padding=10)
             main_frame.pack(fill=tk.BOTH, expand=True)
 
-            # Smoothing Frame
+            # smoothing group box
             options_frame = ttk.LabelFrame(main_frame, text="", padding=10)
             options_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -74,14 +75,16 @@ class SirilBGEInterface:
                 length=200
             )
             smoothing_scale.pack(side=tk.LEFT, padx=10, expand=True)
+
+            self.smoothing_display = tk.StringVar(value=f"{self.smoothing_var.get():.2f}")
             ttk.Label(
                 gradient_frame,
-                textvariable=self.smoothing_var,
+                textvariable=self.smoothing_display,
                 width=5
             ).pack(side=tk.LEFT)
 
             # Add trace to update display when slider changes
-            self.smoothing_var.trace_add("write", self.update_bge_gradient)        
+            self.smoothing_var.trace_add("write", self.UpdateSmoothing)        
         
             # Apply Button
             button_frame = ttk.Frame(main_frame)
@@ -94,9 +97,10 @@ class SirilBGEInterface:
             )
             self.apply_btn.pack(side=tk.LEFT, padx=5)
 
-    def update_bge_gradient(self, *args):
+    def UpdateSmoothing(self, *args):
             """Update the gradient value in the slider widget to two decimal places."""
-            self.smoothing_var.set(f"{self.smoothing_var.get():.2f}")
+            #self.smoothing_var.set(f"{self.smoothing_var.get():.2f}")
+            self.smoothing_display.set(f"{self.smoothing_var.get():.2f}")
     
     def OnApply(self):
         """Callback for the Apply button."""

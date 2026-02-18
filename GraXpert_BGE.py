@@ -65,7 +65,7 @@ class SirilBGEInterface:
             gradient_frame.pack(fill=tk.X, pady=5)
 
             ttk.Label(gradient_frame, text="Smoothing:").pack(side=tk.LEFT)
-            self.smoothing_var = tk.DoubleVar(value=0.80)
+            self.smoothing_var = tk.DoubleVar(value=0.50)
             smoothing_scale = ttk.Scale(
                 gradient_frame,
                 from_=0.0,

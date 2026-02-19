@@ -29,10 +29,10 @@ register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.1 -kernel=square
 register OIII_pp_light -drizzle -scale=1.0 -pixfrac=1.0 -kernel=square
 
 # Stack OIII channel
-stack r_OIII_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_01
+stack r_OIII_pp_light rej 3 3 -norm=addscale -filter-wfwhm=3.0k -32b -out=results_01
 
 # Stack Ha channel
-stack r_Ha_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=results_02
+stack r_Ha_pp_light rej 3 3 -norm=addscale -filter-wfwhm=3.0k -32b -out=results_02
 
 # Align and crop the result images
 register results -2pass

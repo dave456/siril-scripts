@@ -21,3 +21,8 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 # Align lights with Drizzle
 register pp_light -drizzle -scale=1.0 -pixfrac=1.0 -kernel=square
 
+# stack and filter on wfwhm
+stack r_pp_light rej 3 3 -norm=addscale -filter-wfwhm=3.0k -32b -out=../results
+
+cd ..
+load results

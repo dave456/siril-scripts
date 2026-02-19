@@ -28,6 +28,7 @@ class NbMixerWindow(QWidget):
         super().__init__()
         self.setWindowTitle(f"Dual Narrow Band Mixer")
         self.setFixedWidth(600)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
         # Siril connection
         self.siril = s.SirilInterface()
@@ -215,6 +216,15 @@ class NbMixerWindow(QWidget):
             ha_data = fits.getdata(self.ha_file)
             oiii_data = fits.getdata(self.oiii_file)
 
+            # TODO: Some normalization ideas...
+            #pHa = np.percentile(ha_data, 99)
+            #pO = np.percentile(oiii_data, 99)
+            #Ha_sig = np.median(ha_data) - np.median(bg_ha_data)
+            #OIII_sig = np.median(oiii_data) - median(bg_oiii_data)
+            #scale = pHa / pO
+            #print(f"scale: {scale}")
+            #oiii_data = oiii_data * scale
+
             # Create RGB channels
             red_channel = (self.red_ha / 100) * ha_data + (self.red_oiii / 100) * oiii_data
             green_channel = (self.green_ha / 100) * ha_data + (self.green_oiii / 100) * oiii_data
@@ -226,7 +236,8 @@ class NbMixerWindow(QWidget):
             # grab the fits header from the Ha file
             with fits.open(self.ha_file) as hdul:
                 header = hdul[0].header
-            header.add_history("Blended using NarrowBandMixer")
+            header.add_history(f"NarrowBandMixer (Ha/OII) mix: R({self.red_ha}/{self.red_oiii}, "
+                               f"G({self.green_ha}/{self.green_oiii}, B({self.blue_ha}/{self.blue_oiii})))")
 
             out_name = "NB-Blended.fits"
             hdu = fits.PrimaryHDU(combined_data, header=header)

@@ -27,7 +27,7 @@ import sv_ttk
 from sirilpy import tksiril
 
 cosmicClarityLocation = "C:/CosmicClarity"
-sharpenExecutable = "C:/CosmicClarity/setiastrocosmicclarity.exe"
+sharpenExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
 class SirilCosmicClarityInterface:
     def __init__(self, root):
@@ -219,17 +219,21 @@ class SirilCosmicClarityInterface:
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
-    async def RunCosmicClarity(self):
+    async def RunCosmicClarity(self, inputFile, outputFile):
         """Run Cosmic Clarity"""
         try:
             # setiastro sharpen doesn't like it if you don't pass in all the arguments, 
             # even if you don't use them, e.g. PSF strength
             command = [
                 sharpenExecutable,
-                f"--sharpening_mode={self.sharpening_mode_var.get()}",
-                f"--stellar_amount={self.stellar_str_display.get()}",
-                f"--nonstellar_amount={self.non_stellar_str_display.get()}",
-                f"--nonstellar_strength={self.non_stellar_psf_display.get()}",
+                "cc",
+                "sharpen",
+                f"-i={os.path.join(cosmicClarityLocation, "input", inputFile)}",
+                f"-o={os.path.join(cosmicClarityLocation, "output", outputFile)}"
+                f"--sharpening-mode={self.sharpening_mode_var.get()}",
+                f"--stellar-amount={self.stellar_str_display.get()}",
+                f"--nonstellar-amount={self.non_stellar_str_display.get()}",
+                f"--nonstellar-psf={self.non_stellar_psf_display.get()}",
             ]
 
             if not self.use_gpu_var.get():
@@ -239,9 +243,17 @@ class SirilCosmicClarityInterface:
                 command.append("--sharpen_channels_separately")
 
             if self.use_auto_psf_var.get():
-                command.append("--auto_detect_psf")
+                command.append("--auto-psf")
 
             #print(f"Running command: {' '.join(command)}")
+            self.siril.log(f"Sharpening mode: {self.sharpening_mode_var.get()}", s.LogColor.BLUE)
+            self.siril.log(f"Stellar sharpening: {self.stellar_str_display.get()}", s.LogColor.BLUE)
+            self.siril.log(f"Non-stellar sharpening: {self.non_stellar_str_display.get()}", s.LogColor.BLUE)
+            if self.use_auto_psf_var.get():
+                self.siril.log("Use Auto PSF", s.LogColor.BLUE)
+            else:
+                self.siril.log(f"Stellar PSF: {self.non_stellar_psf_display.get()}", s.LogColor.BLUE)
+
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -258,14 +270,11 @@ class SirilCosmicClarityInterface:
                 lines = buffer.split('\r')
 
                 for line in lines[:-1]:
-                    match = re.search(r'(\d+\.\d+)%', line)
+                    match = re.search(r'(\d+)%', line)
                     if match:
                         percentage = float(match.group(1))
-                        message = "Sharpening..."
-                        self.siril.update_progress(message, percentage / 100)
-                    else:
-                        print(line.strip())
-
+                        self.siril.update_progress("Sharpening...", percentage / 100)
+ 
                 buffer = lines[-1]
 
             await process.wait()
@@ -305,7 +314,7 @@ class SirilCosmicClarityInterface:
 
                 # kick off the sharpening process
                 self.siril.update_progress("Seti Astro Cosmic Clarity Sharpen starting...", 0)
-                success = await self.RunCosmicClarity()
+                success = await self.RunCosmicClarity(sharpenTemp, sharpenResult)
 
                 if success:
                     # grab the sharpened result
@@ -313,10 +322,7 @@ class SirilCosmicClarityInterface:
                         #print(f"Moving {sharpenResult} to {outputfilename}")
                         if os.path.isfile(outputfilename):
                             os.remove(outputfilename)
-                        os.rename(
-                            os.path.join(cosmicClarityLocation, "output", sharpenResult),
-                            outputfilename
-                        )
+                        os.rename(os.path.join(cosmicClarityLocation, "output", sharpenResult), outputfilename)
 
                     # load the resulting image and set it in Siril
                     with fits.open(outputfilename) as hdul:

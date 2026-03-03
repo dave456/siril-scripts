@@ -147,7 +147,8 @@ class SirilDenoiseInterface:
                     os.remove(outputFile)
 
                 # run graxpert
-                self.siril.log(f"GraXpert denoise: ai=latest, strength={denoise_strength:.2f}")
+                self.siril.log("AI model: latest", sirilpy.LogColor.BLUE)
+                self.siril.log(f"Strength: {denoise_strength:.2f}", sirilpy.LogColor.BLUE)
                 #print(f"Command: {graxpertExecutable} {' '.join(args)}")
                 self.siril.update_progress("GraXpert denoise running...", 0)
                 subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
@@ -161,7 +162,7 @@ class SirilDenoiseInterface:
                     self.siril.set_image_pixeldata(data)
 
                 self.siril.update_progress("GraXpert denoise running...", 1)
-                self.siril.log("GraXpert denoise completed.", sirilpy.LogColor.GREEN)
+                self.siril.log("Denoise complete.", sirilpy.LogColor.GREEN)
                 
         except subprocess.CalledProcessError as e:
             self.siril.log(f"Error occurred while running GraXpert: {e}", sirilpy.LogColor.SALMON)

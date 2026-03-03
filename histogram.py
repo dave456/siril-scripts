@@ -142,12 +142,6 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
     x = np.arange(bins)
     for i, color in enumerate(fill_colors):
         hist = cv2.calcHist([img_bgr], [i], None, [bins], [0, 256]).flatten()
-
-        # normalize histogram counts to fit within 16-bit range for better visualization
-        hist = hist.astype(np.float64)
-        hist = (hist / hist.max()) * 65535.0 if hist.max() > 0 else hist
-        ax.set_ylim(0, 65535)
-
         ax.fill_between(x, hist, color=color, alpha=fill_alpha, step='mid')
         ax.plot(x, hist, color=color, linewidth=0.9, alpha=edge_alpha)
     ax.set_xlim([0, bins - 1])

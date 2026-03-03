@@ -18,13 +18,14 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 seqextract_HaOIII pp_light
 
 # Register Ha channel
-# We drizzle the Ha channel at a 2x scale, because it has half the size of the 
-# OIII channel. Using a pixfrac > 1.0 helps to reduce noise with some loss of resolution.
+# We drizzle the Ha channel at a 2x scale, because it has half the size of the OIII.
+# Using a pixfrac > 1.0 helps to reduce noise with some loss of resolution.
+# Note: adjusting pixfrac down to 1.0 can be ok if you have enough subs
 register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.1 -kernel=square
 
 # Register OIII channel
 # Using lanczos4 interpolation for the OIII channel can sometimes yield better results.
-# Generally, drizzle seems to provide better results, but lanczos4 is left here as an option.
+# Generally, drizzle seems to provide the best results, but lanczos4 is left here as an option.
 #register OIII_pp_light -interp=lanczos4
 register OIII_pp_light -drizzle -scale=1.0 -pixfrac=1.0 -kernel=square
 
@@ -46,4 +47,5 @@ save ../OIII_results
 load r_results_02
 save ../Ha_results
 
-close
+cd ..
+load Ha_results

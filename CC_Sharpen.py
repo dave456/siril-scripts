@@ -26,7 +26,6 @@ from ttkthemes import ThemedTk
 import sv_ttk
 from sirilpy import tksiril
 
-cosmicClarityLocation = "C:/CosmicClarity"
 sharpenExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
 class SirilCosmicClarityInterface:
@@ -228,8 +227,8 @@ class SirilCosmicClarityInterface:
                 sharpenExecutable,
                 "cc",
                 "sharpen",
-                f"-i={os.path.join(cosmicClarityLocation, "input", inputFile)}",
-                f"-o={os.path.join(cosmicClarityLocation, "output", outputFile)}"
+                f"-i={inputFile}",
+                f"-o={outputFile}",
                 f"--sharpening-mode={self.sharpening_mode_var.get()}",
                 f"--stellar-amount={self.stellar_str_display.get()}",
                 f"--nonstellar-amount={self.non_stellar_str_display.get()}",
@@ -298,34 +297,23 @@ class SirilCosmicClarityInterface:
         try:
             # claim the processing thread
             with self.siril.image_lock():
-                # get the current image filename and construct our new output filename
-                curfilename = self.siril.get_image_filename()
-                basename = os.path.basename(curfilename)
-                directory = os.path.dirname(curfilename)
-                outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-sharp-temp.fits")
-                sharpenTemp = f"{basename.split('.')[0]}-sharp.fits"
-                sharpenResult = f"{basename.split('.')[0]}-sharp_sharpened.fits"
+               # get the current image filename and construct our new temp file names
+                cwd = os.path.dirname(self.siril.get_image_filename())
+                inputFile = os.path.join(cwd, "cc-sharpen-temp-input.fits")
+                outputFile = os.path.join(cwd, "cc-sharpen-temp-output.fits")
 
                 # get current image data and save to temp file
                 data = self.siril.get_image_pixeldata()
                 hdu = fits.PrimaryHDU(data)
-                hdu.writeto(sharpenTemp, overwrite=True)
-                os.rename(sharpenTemp, os.path.join(cosmicClarityLocation, "input", sharpenTemp))
+                hdu.writeto(inputFile, overwrite=True)
 
                 # kick off the sharpening process
                 self.siril.update_progress("Seti Astro Cosmic Clarity Sharpen starting...", 0)
-                success = await self.RunCosmicClarity(sharpenTemp, sharpenResult)
+                success = await self.RunCosmicClarity(inputFile, outputFile)
 
                 if success:
-                    # grab the sharpened result
-                    if os.path.exists(os.path.join(cosmicClarityLocation, "output", sharpenResult)):
-                        #print(f"Moving {sharpenResult} to {outputfilename}")
-                        if os.path.isfile(outputfilename):
-                            os.remove(outputfilename)
-                        os.rename(os.path.join(cosmicClarityLocation, "output", sharpenResult), outputfilename)
-
                     # load the resulting image and set it in Siril
-                    with fits.open(outputfilename) as hdul:
+                    with fits.open(outputFile) as hdul:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
@@ -337,19 +325,18 @@ class SirilCosmicClarityInterface:
                         save_state = save_state.rstrip(",")
                         self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
-                    
                     self.siril.log("Sharpening complete.", s.LogColor.GREEN)
+                else:
+                    self.siril.log("Sharpening failed.", s.LogColor.SALMON)
 
         except Exception as e:
             self.siril.log(f"Error in apply_changes: {str(e)}", s.LogColor.SALMON)
 
         finally:
-            if os.path.exists(sharpenTemp):
-                os.remove(sharpenTemp)
-            if os.path.exists(os.path.join(cosmicClarityLocation, "input", sharpenTemp)):
-                os.remove(os.path.join(cosmicClarityLocation, "input", sharpenTemp))
-            if os.path.exists(outputfilename):
-                os.remove(outputfilename)
+            if os.path.exists(inputFile):
+                os.remove(inputFile)
+            if os.path.exists(outputFile):
+                os.remove(outputFile)
 
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))

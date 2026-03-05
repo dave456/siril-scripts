@@ -26,8 +26,7 @@ from sirilpy import tksiril
 from astropy.io import fits
 import numpy as np
 
-cosmicClarityLocation = "C:/CosmicClarity"
-denoiseExecutable = "C:/CosmicClarity/setiastrocosmicclarity_denoise.exe"
+denoiseExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
 class SirilDenoiseInterface:
     # constructor
@@ -48,7 +47,6 @@ class SirilDenoiseInterface:
             self.close_dialog()
             return
 
-        #tksiril.match_theme_to_siril(self.root, self.siril)
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -63,7 +61,7 @@ class SirilDenoiseInterface:
 
             # Denoising modes
             self.denoise_mode_var = tk.StringVar(value="full")
-            denoise_modes = ["luminance", "full", "separate"]
+            denoise_modes = ["luminance", "full"]
             for mode in denoise_modes:
                 ttk.Radiobutton(
                     mode_frame,
@@ -133,8 +131,15 @@ class SirilDenoiseInterface:
             ttk.Checkbutton(
                 options_frame,
                 text="Use GPU",
-                variable=self.use_gpu_var,
-                style="TCheckbutton"
+                variable=self.use_gpu_var
+            ).pack(anchor=tk.W, pady=2)
+
+            # Denoise RGB channels individually
+            self.separate_channels = tk.BooleanVar(value=False)
+            ttk.Checkbutton(
+                options_frame,
+                text="Separate RGB channels",
+                variable=self.separate_channels
             ).pack(anchor=tk.W, pady=2)
         
             # Apply Button
@@ -168,20 +173,27 @@ class SirilDenoiseInterface:
         """Run Apply changes in a separate thread to avoid blocking the GUI."""
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
-    async def RunCosmicClarity(self):
+    async def RunCosmicClarity(self, inputFile, outputFile):
         """Run Cosmic Clarity denoise."""
         try:
             command = [
                 denoiseExecutable,
-                f"--denoise_mode={self.denoise_mode_var.get()}",
-                f"--denoise_strength={self.lum_strength_display.get()}",
-                f"--color_denoise_strength={self.color_strength_display.get()}"
+                "cc",
+                "denoise",
+                f"-i={inputFile}",
+                f"-o={outputFile}",
+                f"--denoise-mode={self.denoise_mode_var.get()}",
+                f"--denoise-luma={self.lum_strength_display.get()}",
+                f"--denoise-color={self.color_strength_display.get()}"
             ]
 
             if not self.use_gpu_var.get():
                 command.append("--disable_gpu")
 
-            print(f"Running command: {' '.join(command)}")
+            if self.separate_channels.get():
+                command.append("--separate-channels")
+
+            #print(f"Running command: {' '.join(command)}")
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -198,13 +210,10 @@ class SirilDenoiseInterface:
                 lines = buffer.split('\r')
 
                 for line in lines[:-1]:
-                    match = re.search(r'(\d+\.\d+)%', line)
+                    match = re.search(r'(\d+)%', line)
                     if match:
                         percentage = float(match.group(1))
-                        message = "Denoising..."
-                        self.siril.update_progress(message, percentage / 100)
-                    else:
-                        print(line.strip())
+                        self.siril.update_progress("Denoising...", percentage / 100)
 
                 buffer = lines[-1]
 
@@ -222,69 +231,58 @@ class SirilDenoiseInterface:
             return True
         
         except Exception as e:
-            print(f"Error in run_cosmic_clarity: {str(e)}")
+            self.siril.log(f"Unhandled exception in RunCosmicClarity(): {str(e)}", s.LogColor.SALMON)
             return False
 
     async def ApplyChanges(self):
         try:
             # Claim the processing thread
             with self.siril.image_lock():
-                # get the current image filename and construct our new output filename
-                curfilename = self.siril.get_image_filename()
-                basename = os.path.basename(curfilename)
-                directory = os.path.dirname(curfilename)
-                outputfilename = os.path.join(directory, f"{basename.split('.')[0]}-denoise-temp.fits")
-                denoiseTemp = f"{basename.split('.')[0]}-temp.fits"
-                denoiseResult = f"{basename.split('.')[0]}-temp_denoised.fits"
+                # get the current image filename and construct our new temp file names
+                cwd = os.path.dirname(self.siril.get_image_filename())
+                inputFile = os.path.join(cwd, "cc-denoise-temp-input.fits")
+                outputFile = os.path.join(cwd, "cc-denoise-temp-output.fits")
 
-                # get current image data and save to temp file
+                # get current image data and save to our temp input file
                 data = self.siril.get_image_pixeldata()
                 hdu = fits.PrimaryHDU(data)
-                hdu.writeto(denoiseTemp, overwrite=True)
-                os.rename(denoiseTemp, os.path.join(cosmicClarityLocation, "input", denoiseTemp))
+                hdu.writeto(inputFile, overwrite=True)
 
                 # kick off the denoise process
-                msg = f"CC denoise: mode='{self.denoise_mode_var.get()}' str={self.lum_strength_var.get():.2f} color str={self.color_strength_var.get():.2f}"
-                self.siril.log(msg)
+                self.siril.log(f"Denoise mode: {self.denoise_mode_var.get()}", s.LogColor.BLUE)
+                self.siril.log(f"Luma strength: {self.lum_strength_display.get()}", s.LogColor.BLUE)
                 self.siril.update_progress("Cosmic Clarity Denoise starting...", 0)
-                success = await self.RunCosmicClarity()
+                success = await self.RunCosmicClarity(inputFile, outputFile)
 
                 # load up the file on success and get out of dodge
                 if success:
-                    if os.path.exists(os.path.join(cosmicClarityLocation, "output", denoiseResult)):
-                        #print(f"Moving {denoiseResult} to {outputfilename}")
-                        if os.path.isfile(outputfilename):
-                            os.remove(outputfilename)
-                        os.rename(
-                            os.path.join(cosmicClarityLocation, "output", denoiseResult),
-                            outputfilename
-                        )
-
                     # load the resulting image and set it in Siril
-                    with fits.open(outputfilename) as hdul:
+                    with fits.open(outputFile) as hdul:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        self.siril.undo_save_state(msg)
+                        self.siril.undo_save_state(f"CC denoise: mode='{self.denoise_mode_var.get()}' "
+                                                   f"luma={self.lum_strength_var.get():.2f} "
+                                                   f"color={self.color_strength_var.get():.2f}")
+                                                   
                         self.siril.set_image_pixeldata(data)
-
-                    self.siril.reset_progress()
                     self.siril.log("Denoise complete.", s.LogColor.GREEN)
+                else:
+                    self.siril.log("Denose failed.", s.LogColor.SALMON)
 
         except Exception as e:
-            print(f"Error in apply_changes: {str(e)}")
-            self.siril.update_progress(f"Error: {str(e)}", 0)
+            self.siril.log(f"Unhandled exception in ApplyChanges(): {str(e)}", s.LogColor.SALMON)
+            self.siril.log("Denoise failed.", s.LogColor.SALMON)
 
         finally:
-            if os.path.exists(denoiseTemp):
-                os.remove(denoiseTemp)
-            if os.path.exists(os.path.join(cosmicClarityLocation, "input", denoiseTemp)):
-                os.remove(os.path.join(cosmicClarityLocation, "input", denoiseTemp))
-            if os.path.exists(outputfilename):
-                os.remove(outputfilename)
+            if os.path.exists(inputFile):
+                os.remove(inputFile)
+            if os.path.exists(outputFile):
+                os.remove(outputFile)
 
             # always modify tkinter widgets from the main thread    
             self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
+            self.siril.reset_progress()
 
 def main():
     try:

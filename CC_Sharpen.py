@@ -249,9 +249,9 @@ class SirilCosmicClarityInterface:
             self.siril.log(f"Stellar sharpening: {self.stellar_str_display.get()}", s.LogColor.BLUE)
             self.siril.log(f"Non-stellar sharpening: {self.non_stellar_str_display.get()}", s.LogColor.BLUE)
             if self.use_auto_psf_var.get():
-                self.siril.log("Use Auto PSF", s.LogColor.BLUE)
+                self.siril.log("PSF: auto", s.LogColor.BLUE)
             else:
-                self.siril.log(f"Stellar PSF: {self.non_stellar_psf_display.get()}", s.LogColor.BLUE)
+                self.siril.log(f"PSF: {self.non_stellar_psf_display.get()}", s.LogColor.BLUE)
 
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -290,7 +290,7 @@ class SirilCosmicClarityInterface:
             return True
 
         except Exception as e:
-            self.siril.log(f"Error in run_cosmic_clarity: {str(e)}", s.LogColor.SALMON)
+            self.siril.log(f"Unhandled exception in RunCosmicClarity(): {str(e)}", s.LogColor.SALMON)
             return False
 
     async def ApplyChanges(self):
@@ -317,12 +317,15 @@ class SirilCosmicClarityInterface:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        save_state = f"CC sharpening: '{self.sharpening_mode_var.get()},'"
+                        save_state = f"CC sharpening: '{self.sharpening_mode_var.get()}', "
                         if self.sharpening_mode_var.get() == "Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f" stellar={self.stellar_str_var.get()},"
+                            save_state += f"stellar={self.stellar_str_var.get()}, "
                         if self.sharpening_mode_var.get() == "Non-Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f" non-stellar={self.non_stellar_str_var.get()}, str={self.non_stellar_psf_var.get()}"
-                        save_state = save_state.rstrip(",")
+                            save_state += f"non-stellar={self.non_stellar_str_var.get()}, "
+                        if self.use_auto_psf_var.get():
+                            save_state += "PSF: auto"
+                        else:
+                            save_state += f"PSF={self.non_stellar_psf_display.get()}"
                         self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Sharpening complete.", s.LogColor.GREEN)
@@ -330,7 +333,7 @@ class SirilCosmicClarityInterface:
                     self.siril.log("Sharpening failed.", s.LogColor.SALMON)
 
         except Exception as e:
-            self.siril.log(f"Error in apply_changes: {str(e)}", s.LogColor.SALMON)
+            self.siril.log(f"Unhandled exception in ApplyChanges(): {str(e)}", s.LogColor.SALMON)
 
         finally:
             if os.path.exists(inputFile):

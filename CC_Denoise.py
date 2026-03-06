@@ -190,8 +190,13 @@ class SirilDenoiseInterface:
             if not self.use_gpu_var.get():
                 command.append("--disable_gpu")
 
+            self.siril.log(f"Denoise mode: {self.denoise_mode_var.get()}", s.LogColor.BLUE)
+            self.siril.log(f"Luma strength: {self.lum_strength_display.get()}", s.LogColor.BLUE)
+            self.siril.log(f"Color strength: {self.color_strength_display.get()}", s.LogColor.BLUE)
+
             if self.separate_channels.get():
                 command.append("--separate-channels")
+                self.siril.log("Denoise separate channels", s.LogColor.BLUE)
 
             #print(f"Running command: {' '.join(command)}")
             process = await asyncio.create_subprocess_exec(
@@ -249,8 +254,6 @@ class SirilDenoiseInterface:
                 hdu.writeto(inputFile, overwrite=True)
 
                 # kick off the denoise process
-                self.siril.log(f"Denoise mode: {self.denoise_mode_var.get()}", s.LogColor.BLUE)
-                self.siril.log(f"Luma strength: {self.lum_strength_display.get()}", s.LogColor.BLUE)
                 self.siril.update_progress("Cosmic Clarity Denoise starting...", 0)
                 success = await self.RunCosmicClarity(inputFile, outputFile)
 
@@ -264,7 +267,6 @@ class SirilDenoiseInterface:
                         self.siril.undo_save_state(f"CC denoise: mode='{self.denoise_mode_var.get()}' "
                                                    f"luma={self.lum_strength_var.get():.2f} "
                                                    f"color={self.color_strength_var.get():.2f}")
-                                                   
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Denoise complete.", s.LogColor.GREEN)
                 else:

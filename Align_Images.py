@@ -24,7 +24,7 @@ ALIGN_WORKING_DIR = "align_working"
 class SirilAlignInterface:
     def __init__(self, root):
         self.root = root
-        root.title("Siril Alignment Tool")
+        root.title("Image Alignment Tool")
         self.root.resizable(True, True)
         self.root.attributes("-topmost", True)
         self.style = tksiril.standard_style()

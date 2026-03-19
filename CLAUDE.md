@@ -28,7 +28,7 @@ This repository contains scripts for [Siril](https://siril.org/), an open-source
 
 ## Development Notes
 
-- Python scripts use `sirilpy` for Siril communication and `tkinter`/`ttkthemes`/`sv_ttk` for GUIs.
+- Python scripts use `sirilpy` for Siril communication and either `tkinter`/`ttkthemes`/`sv_ttk` or `PyQt6` for GUIs. Both frameworks are used and supported in this repository.
 - The `dev/` directory is excluded from version control (see `.gitignore`).
 - Scripts are designed to run from within Siril's script runner.
 

@@ -21,7 +21,8 @@ import numpy as np
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox
+    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox,
+    QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -148,6 +149,24 @@ class SirilCosmicClarityInterface(QWidget):
         self.use_auto_psf_check = QCheckBox("Use automatic PSF")
         self.use_auto_psf_check.setChecked(True)
         options_layout.addWidget(self.use_auto_psf_check)
+
+        # Pre-stretch row
+        pre_stretch_row = QHBoxLayout()
+        self.pre_stretch_check = QCheckBox("Pre-stretch")
+        self.pre_stretch_check.setChecked(False)
+        pre_stretch_row.addWidget(self.pre_stretch_check)
+        self.pre_stretch_spin = QDoubleSpinBox()
+        self.pre_stretch_spin.setDecimals(3)
+        self.pre_stretch_spin.setMinimum(0.001)
+        self.pre_stretch_spin.setMaximum(0.999)
+        self.pre_stretch_spin.setValue(0.100)
+        self.pre_stretch_spin.setSingleStep(0.001)
+        self.pre_stretch_spin.setFixedWidth(80)
+        self.pre_stretch_spin.setEnabled(False)
+        pre_stretch_row.addWidget(self.pre_stretch_spin)
+        pre_stretch_row.addStretch()
+        self.pre_stretch_check.toggled.connect(self.pre_stretch_spin.setEnabled)
+        options_layout.addLayout(pre_stretch_row)
         layout.addWidget(options_box)
 
         # Apply button
@@ -254,6 +273,9 @@ class SirilCosmicClarityInterface(QWidget):
             return False
 
     async def ApplyChanges(self):
+        pre_stretch = self.pre_stretch_check.isChecked()
+        m = self.pre_stretch_spin.value() if pre_stretch else None
+
         try:
             # claim the processing thread
             with self.siril.image_lock():
@@ -264,6 +286,9 @@ class SirilCosmicClarityInterface(QWidget):
 
                 # get current image data and save to temp file
                 data = self.siril.get_image_pixeldata()
+                if pre_stretch:
+                    self.siril.log(f"Pre-stretch: {m:.3f}", s.LogColor.BLUE)
+                    data = mtf(m, data)
                 hdu = fits.PrimaryHDU(data)
                 hdu.writeto(inputFile, overwrite=True)
 
@@ -277,8 +302,11 @@ class SirilCosmicClarityInterface(QWidget):
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
+                        if pre_stretch:
+                            inv_m = 1.0 - m
+                            data = mtf(inv_m, data)
                         mode = self._sharpening_mode()
-                        save_state = f"CC sharpening: '{mode}', "
+                        save_state = f"CC: '{mode}', "
                         if mode in ("Stellar Only", "Both"):
                             save_state += f"stellar={self.stellar_str_slider.value() / 100:.2f}, "
                         if mode in ("Non-Stellar Only", "Both"):
@@ -287,6 +315,8 @@ class SirilCosmicClarityInterface(QWidget):
                             save_state += "PSF: auto"
                         else:
                             save_state += f"PSF={self.non_stellar_psf_slider.value() / 10:.1f}"
+                        if pre_stretch:
+                            save_state += f", pre-stretch={m:.3f}"
                         self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Sharpening complete.", s.LogColor.GREEN)
@@ -305,6 +335,14 @@ class SirilCosmicClarityInterface(QWidget):
             # re-enable the Apply button from the main thread via signal
             self._enable_apply.emit()
             self.siril.reset_progress()
+
+def mtf(m, img):
+    """Midtones transfer function. Returns ((m-1)*x) / ((2m-1)*x - m)"""
+    if m == 0.5:
+        return img
+    clipped = np.clip(img, 0, 1)
+    return ((m - 1) * clipped) / (((2 * m - 1) * clipped) - m)
+
 
 def main():
     try:

@@ -6,10 +6,9 @@
 #
 
 import sirilpy as s
-s.ensure_installed("ttkthemes")
+s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
-s.ensure_installed("sv_ttk")
 
 import os
 import re
@@ -18,24 +17,24 @@ import asyncio
 import subprocess
 import threading
 
-import tkinter as tk
-from tkinter import ttk
-from ttkthemes import ThemedTk
-import sv_ttk
-from sirilpy import tksiril
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox
+)
+from PyQt6.QtCore import Qt, pyqtSignal
 from astropy.io import fits
 import numpy as np
 
 denoiseExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
-class SirilDenoiseInterface:
-    # constructor
-    def __init__(self, root):
-        self.root = root
-        self.root.title(f"Cosmic Clarity Denoise")
-        self.root.resizable(False, False)
-        self.root.attributes("-topmost", True)
-        self.style = tksiril.standard_style()
+class SirilDenoiseInterface(QWidget):
+    _enable_apply = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Cosmic Clarity Denoise")
+        self.setFixedWidth(400)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
         # Initialize Siril connection
         self.siril = s.SirilInterface()
@@ -43,162 +42,134 @@ class SirilDenoiseInterface:
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril!", True)
-            self.close_dialog()
+            QMessageBox.critical(self, "Error", "Failed to connect to Siril!")
+            self.close()
             return
 
+        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
         self.CreateWidgets()
 
     def CreateWidgets(self):
-            """Create the GUI widgets for the Cosmic Clarity Denoise interface."""
-            # Main frame
-            main_frame = ttk.Frame(self.root, padding=10)
-            main_frame.pack(fill=tk.BOTH, expand=True)
+        """Create the GUI widgets for the Cosmic Clarity Denoise interface."""
+        layout = QVBoxLayout()
+        self.setLayout(layout)
 
-            # Denoise Mode Group Box
-            mode_frame = ttk.LabelFrame(main_frame, text="Denoise Mode", padding=10)
-            mode_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Denoise Mode Group Box
+        mode_box = QGroupBox(" Denoise Mode ")
+        mode_layout = QVBoxLayout()
+        mode_box.setLayout(mode_layout)
+        mode_box.setContentsMargins(8, 23, 8, 13)
 
-            # Denoising modes
-            self.denoise_mode_var = tk.StringVar(value="full")
-            denoise_modes = ["luminance", "full"]
-            for mode in denoise_modes:
-                ttk.Radiobutton(
-                    mode_frame,
-                    text=mode.capitalize(),
-                    variable=self.denoise_mode_var,
-                    value=mode
-                ).pack(anchor=tk.W, pady=2)
+        self.luminance_radio = QRadioButton("Luminance")
+        self.full_radio = QRadioButton("Full")
+        self.full_radio.setChecked(True)
+        mode_layout.addWidget(self.luminance_radio)
+        mode_layout.addWidget(self.full_radio)
+        layout.addWidget(mode_box)
 
-            # Strength frame
-            strength_frame = ttk.LabelFrame(main_frame, text="Denoise Strength", padding=10)
-            strength_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Denoise Strength Group Box
+        strength_box = QGroupBox(" Denoise Strength ")
+        strength_layout = QVBoxLayout()
+        strength_box.setLayout(strength_layout)
+        strength_box.setContentsMargins(8, 23, 8, 13)
 
-            # Luminance strength slider
-            luminance_str_frame = ttk.Frame(strength_frame)
-            luminance_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(luminance_str_frame, text=" Luminance:", width=12).pack(side=tk.LEFT)
-            self.lum_strength_var = tk.DoubleVar(value=0.75)
-            denoise_strength_scale = ttk.Scale(
-                luminance_str_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.lum_strength_var,
-                length=200
-            )
-            denoise_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            self.lum_strength_var.trace_add("write", self.UpdateLuminanceStr)
+        # Luminance strength slider
+        lum_row = QHBoxLayout()
+        lum_label = QLabel("Luminance:")
+        lum_label.setFixedWidth(75)
+        lum_row.addWidget(lum_label)
+        self.lum_slider = QSlider(Qt.Orientation.Horizontal)
+        self.lum_slider.setMinimum(0)
+        self.lum_slider.setMaximum(100)
+        self.lum_slider.setValue(75)
+        lum_row.addWidget(self.lum_slider, 1)
+        self.lum_value_label = QLabel("0.75")
+        self.lum_value_label.setFixedWidth(35)
+        lum_row.addWidget(self.lum_value_label)
+        self.lum_slider.valueChanged.connect(
+            lambda v: self.lum_value_label.setText(f"{v / 100:.2f}")
+        )
+        strength_layout.addLayout(lum_row)
 
-            # Luminance strength display
-            self.lum_strength_display = tk.StringVar(value=f"{self.lum_strength_var.get():.2f}")
-            ttk.Label(
-                luminance_str_frame,
-                textvariable=self.lum_strength_display,
-                width=5
-            ).pack(side=tk.LEFT)
+        # Color strength slider
+        color_row = QHBoxLayout()
+        color_label = QLabel("Color:")
+        color_label.setFixedWidth(75)
+        color_row.addWidget(color_label)
+        self.color_slider = QSlider(Qt.Orientation.Horizontal)
+        self.color_slider.setMinimum(0)
+        self.color_slider.setMaximum(100)
+        self.color_slider.setValue(55)
+        color_row.addWidget(self.color_slider, 1)
+        self.color_value_label = QLabel("0.55")
+        self.color_value_label.setFixedWidth(35)
+        color_row.addWidget(self.color_value_label)
+        self.color_slider.valueChanged.connect(
+            lambda v: self.color_value_label.setText(f"{v / 100:.2f}")
+        )
+        strength_layout.addLayout(color_row)
+        layout.addWidget(strength_box)
 
-            # Color strength slider
-            color_str_frame = ttk.Frame(strength_frame)
-            color_str_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(color_str_frame, text=" Color:", width=12).pack(side=tk.LEFT)
-            self.color_strength_var = tk.DoubleVar(value=0.55)
-            color_strength_scale = ttk.Scale(
-                color_str_frame,
-                from_=0.0,
-                to=1.0,
-                orient=tk.HORIZONTAL,
-                variable=self.color_strength_var,
-                length=200
-            )
-            color_strength_scale.pack(side=tk.LEFT, padx=10, expand=True)
-            self.color_strength_var.trace_add("write", self.UpdateColorStr)
+        # Options Group Box
+        options_box = QGroupBox(" Options ")
+        options_layout = QVBoxLayout()
+        options_box.setLayout(options_layout)
+        options_box.setContentsMargins(8, 23, 8, 13)
 
-            # Color strength display
-            self.color_strength_display = tk.StringVar(value=f"{self.color_strength_var.get():.2f}")
-            ttk.Label(
-                color_str_frame,
-                textvariable=self.color_strength_display,
-                width=5
-            ).pack(side=tk.LEFT)
-            
-            # Options Mode Group Box
-            options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
-            options_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.use_gpu_check = QCheckBox("Use GPU")
+        self.use_gpu_check.setChecked(True)
+        options_layout.addWidget(self.use_gpu_check)
 
-            # GPU Checkbox
-            self.use_gpu_var = tk.BooleanVar(value=True)
-            ttk.Checkbutton(
-                options_frame,
-                text="Use GPU",
-                variable=self.use_gpu_var
-            ).pack(anchor=tk.W, pady=2)
+        self.separate_channels_check = QCheckBox("Separate RGB channels")
+        self.separate_channels_check.setChecked(False)
+        options_layout.addWidget(self.separate_channels_check)
+        layout.addWidget(options_box)
 
-            # Denoise RGB channels individually
-            self.separate_channels = tk.BooleanVar(value=False)
-            ttk.Checkbutton(
-                options_frame,
-                text="Separate RGB channels",
-                variable=self.separate_channels
-            ).pack(anchor=tk.W, pady=2)
-        
-            # Apply Button
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(pady=10)
-            self.apply_btn = ttk.Button(
-                button_frame,
-                text="Apply",
-                command=self.OnApply,
-                style="TButton"
-            )
-            self.apply_btn.pack(side=tk.LEFT, padx=5)
-
-    def UpdateLuminanceStr(self, *args):
-        """Update luminance strength display value to two decimal places."""
-        self.lum_strength_display.set(f"{self.lum_strength_var.get():.2f}")
-
-    def UpdateColorStr(self, *args):
-        """Update color denoise strength display value to two decimal places."""
-        self.color_strength_display.set(f"{self.color_strength_var.get():.2f}")
+        # Apply Button
+        button_row = QHBoxLayout()
+        self.apply_btn = QPushButton("Apply")
+        self.apply_btn.setFixedWidth(80)
+        self.apply_btn.clicked.connect(self.OnApply)
+        button_row.addWidget(self.apply_btn)
+        layout.addLayout(button_row)
 
     def OnApply(self):
         """Callback for the Apply button."""
         if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded!", True)
+            QMessageBox.critical(self, "Error", "No image loaded!")
             return
-        self.apply_btn.state(['disabled'])
-        self.root.after(0, self.RunApplyChanges)
-
-    def RunApplyChanges(self):
-        """Run Apply changes in a separate thread to avoid blocking the GUI."""
+        self.apply_btn.setEnabled(False)
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def RunCosmicClarity(self, inputFile, outputFile):
         """Run Cosmic Clarity denoise."""
         try:
+            denoise_mode = "luminance" if self.luminance_radio.isChecked() else "full"
+            lum_strength = f"{self.lum_slider.value() / 100:.2f}"
+            color_strength = f"{self.color_slider.value() / 100:.2f}"
+
             command = [
                 denoiseExecutable,
                 "cc",
                 "denoise",
                 f"-i={inputFile}",
                 f"-o={outputFile}",
-                f"--denoise-mode={self.denoise_mode_var.get()}",
-                f"--denoise-luma={self.lum_strength_display.get()}",
-                f"--denoise-color={self.color_strength_display.get()}"
+                f"--denoise-mode={denoise_mode}",
+                f"--denoise-luma={lum_strength}",
+                f"--denoise-color={color_strength}"
             ]
 
-            if not self.use_gpu_var.get():
+            if not self.use_gpu_check.isChecked():
                 command.append("--disable_gpu")
 
-            self.siril.log(f"Denoise mode: {self.denoise_mode_var.get()}", s.LogColor.BLUE)
-            self.siril.log(f"Luma strength: {self.lum_strength_display.get()}", s.LogColor.BLUE)
-            self.siril.log(f"Color strength: {self.color_strength_display.get()}", s.LogColor.BLUE)
+            self.siril.log(f"Denoise mode: {denoise_mode}", s.LogColor.BLUE)
+            self.siril.log(f"Luma strength: {lum_strength}", s.LogColor.BLUE)
+            self.siril.log(f"Color strength: {color_strength}", s.LogColor.BLUE)
 
-            if self.separate_channels.get():
+            if self.separate_channels_check.isChecked():
                 command.append("--separate-channels")
                 self.siril.log("Denoise separate channels", s.LogColor.BLUE)
 
-            #print(f"Running command: {' '.join(command)}")
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=subprocess.PIPE,
@@ -234,7 +205,7 @@ class SirilDenoiseInterface:
                 )
 
             return True
-        
+
         except Exception as e:
             self.siril.log(f"Unhandled exception in RunCosmicClarity(): {str(e)}", s.LogColor.SALMON)
             return False
@@ -264,13 +235,14 @@ class SirilDenoiseInterface:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        self.siril.undo_save_state(f"CC denoise: mode='{self.denoise_mode_var.get()}' "
-                                                   f"luma={self.lum_strength_var.get():.2f} "
-                                                   f"color={self.color_strength_var.get():.2f}")
+                        denoise_mode = "luminance" if self.luminance_radio.isChecked() else "full"
+                        self.siril.undo_save_state(f"CC denoise: mode='{denoise_mode}' "
+                                                   f"luma={self.lum_slider.value() / 100:.2f} "
+                                                   f"color={self.color_slider.value() / 100:.2f}")
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Denoise complete.", s.LogColor.GREEN)
                 else:
-                    self.siril.log("Denose failed.", s.LogColor.SALMON)
+                    self.siril.log("Denoise failed.", s.LogColor.SALMON)
 
         except Exception as e:
             self.siril.log(f"Unhandled exception in ApplyChanges(): {str(e)}", s.LogColor.SALMON)
@@ -282,16 +254,16 @@ class SirilDenoiseInterface:
             if os.path.exists(outputFile):
                 os.remove(outputFile)
 
-            # always modify tkinter widgets from the main thread    
-            self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
+            # re-enable the Apply button from the main thread via signal
+            self._enable_apply.emit()
             self.siril.reset_progress()
 
 def main():
     try:
-        root = ThemedTk()
-        SirilDenoiseInterface(root)
-        sv_ttk.set_theme("dark")
-        root.mainloop()
+        app = QApplication(sys.argv)
+        window = SirilDenoiseInterface()
+        window.show()
+        sys.exit(app.exec())
     except Exception as e:
         print(f"Error initializing application: {str(e)}")
         sys.exit(1)

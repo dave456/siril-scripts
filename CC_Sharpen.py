@@ -6,10 +6,9 @@
 #
 
 import sirilpy as s
-s.ensure_installed("ttkthemes")
+s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
-s.ensure_installed("sv_ttk")
 
 import os
 import re
@@ -20,22 +19,23 @@ import threading
 from astropy.io import fits
 import numpy as np
 
-import tkinter as tk
-from tkinter import ttk
-from ttkthemes import ThemedTk
-import sv_ttk
-from sirilpy import tksiril
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox
+)
+from PyQt6.QtCore import Qt, pyqtSignal
 
 sharpenExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
-class SirilCosmicClarityInterface:
-    def __init__(self, root):
+class SirilCosmicClarityInterface(QWidget):
+    _enable_apply = pyqtSignal()
+
+    def __init__(self):
         """Constructor for SirilCosmicClarityInterface class"""
-        self.root = root
-        self.root.title(f"Cosmic Clarity Sharpening")
-        self.root.resizable(False, False)
-        self.root.attributes("-topmost", True)
-        self.style = tksiril.standard_style()
+        super().__init__()
+        self.setWindowTitle("Cosmic Clarity Sharpening")
+        self.setFixedWidth(450)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
         # Initialize Siril connection
         self.siril = s.SirilInterface()
@@ -43,179 +43,135 @@ class SirilCosmicClarityInterface:
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril!", True)
-            self.close_dialog()
+            QMessageBox.critical(self, "Error", "Failed to connect to Siril!")
+            self.close()
             return
 
+        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
         self.CreateWidgets()
 
     def CreateWidgets(self):
         """Create the main dialog widgets."""
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
 
         # Sharpening mode group box
-        mode_frame = ttk.LabelFrame(main_frame, text="Sharpening Mode", padding=10)
-        mode_frame.pack(fill=tk.X, padx=5, pady=5)
+        mode_box = QGroupBox(" Sharpening Mode ")
+        mode_layout = QVBoxLayout()
+        mode_box.setLayout(mode_layout)
+        mode_box.setContentsMargins(8, 23, 8, 13)
 
-        # Mode radio box
-        self.sharpening_mode_var = tk.StringVar(value="Both")
-        sharpening_modes = ["Stellar Only", "Non-Stellar Only", "Both"]
-        for mode in sharpening_modes:
-            ttk.Radiobutton(
-                mode_frame,
-                text=mode,
-                variable=self.sharpening_mode_var,
-                value=mode
-            ).pack(anchor=tk.W, pady=2)
+        self.stellar_only_radio = QRadioButton("Stellar Only")
+        self.non_stellar_only_radio = QRadioButton("Non-Stellar Only")
+        self.both_radio = QRadioButton("Both")
+        self.both_radio.setChecked(True)
+        mode_layout.addWidget(self.stellar_only_radio)
+        mode_layout.addWidget(self.non_stellar_only_radio)
+        mode_layout.addWidget(self.both_radio)
+        layout.addWidget(mode_box)
 
         # Sharpening strength group box
-        strength_frame = ttk.LabelFrame(main_frame, text="Sharpening Strength", padding=10)
-        strength_frame.pack(fill=tk.X, padx=5, pady=5)
+        strength_box = QGroupBox(" Sharpening Strength ")
+        strength_layout = QVBoxLayout()
+        strength_box.setLayout(strength_layout)
+        strength_box.setContentsMargins(8, 23, 8, 13)
 
-        # non-stellar psf frame
-        non_stellar_str_frame = ttk.Frame(strength_frame)
-        non_stellar_str_frame.pack(fill=tk.X, pady=5)
-
-        # non-stellar psf slider
-        ttk.Label(non_stellar_str_frame, text=" Non-Stellar PSF:", width=20).pack(side=tk.LEFT)
-        self.non_stellar_psf_var = tk.DoubleVar(value=3.0)
-        non_stellar_psf_scale = ttk.Scale(
-            non_stellar_str_frame,
-            from_=1.0,
-            to=8.0,
-            orient=tk.HORIZONTAL,
-            variable=self.non_stellar_psf_var,
-            length=200
+        # Non-stellar PSF slider (range 1.0–8.0, stored as int 10–80)
+        psf_row = QHBoxLayout()
+        psf_label = QLabel("Non-Stellar PSF:")
+        psf_label.setFixedWidth(130)
+        psf_row.addWidget(psf_label)
+        self.non_stellar_psf_slider = QSlider(Qt.Orientation.Horizontal)
+        self.non_stellar_psf_slider.setMinimum(10)
+        self.non_stellar_psf_slider.setMaximum(80)
+        self.non_stellar_psf_slider.setValue(30)
+        psf_row.addWidget(self.non_stellar_psf_slider, 1)
+        self.non_stellar_psf_label = QLabel("3.0")
+        self.non_stellar_psf_label.setFixedWidth(35)
+        psf_row.addWidget(self.non_stellar_psf_label)
+        self.non_stellar_psf_slider.valueChanged.connect(
+            lambda v: self.non_stellar_psf_label.setText(f"{v / 10:.1f}")
         )
-        non_stellar_psf_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        self.non_stellar_psf_var.trace_add("write", self.UpdateNonStellarPSF)
+        strength_layout.addLayout(psf_row)
 
-        # non-stellar psf display
-        self.non_stellar_psf_display = tk.StringVar(value=f"{self.non_stellar_psf_var.get():.1f}")
-        ttk.Label(
-            non_stellar_str_frame,
-            textvariable=self.non_stellar_psf_display,
-            width=5
-        ).pack(side=tk.LEFT)
-        
-        # non-stellar strength frame
-        non_stellar_str_frame = ttk.Frame(strength_frame)
-        non_stellar_str_frame.pack(fill=tk.X, pady=5)
-
-        # non-stellar strength slider
-        ttk.Label(non_stellar_str_frame, text=" Non-Stellar Strength:", width=20).pack(side=tk.LEFT)
-        self.non_stellar_str_var = tk.DoubleVar(value=0.85)
-        non_stellar_str_scale = ttk.Scale(
-            non_stellar_str_frame,
-            from_=0.0,
-            to=1.0,
-            orient=tk.HORIZONTAL,
-            variable=self.non_stellar_str_var,
-            length=200
+        # Non-stellar strength slider (range 0.0–1.0, stored as int 0–100)
+        non_stellar_row = QHBoxLayout()
+        non_stellar_label = QLabel("Non-Stellar Strength:")
+        non_stellar_label.setFixedWidth(130)
+        non_stellar_row.addWidget(non_stellar_label)
+        self.non_stellar_str_slider = QSlider(Qt.Orientation.Horizontal)
+        self.non_stellar_str_slider.setMinimum(0)
+        self.non_stellar_str_slider.setMaximum(100)
+        self.non_stellar_str_slider.setValue(85)
+        non_stellar_row.addWidget(self.non_stellar_str_slider, 1)
+        self.non_stellar_str_label = QLabel("0.85")
+        self.non_stellar_str_label.setFixedWidth(35)
+        non_stellar_row.addWidget(self.non_stellar_str_label)
+        self.non_stellar_str_slider.valueChanged.connect(
+            lambda v: self.non_stellar_str_label.setText(f"{v / 100:.2f}")
         )
-        non_stellar_str_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        self.non_stellar_str_var.trace_add("write", self.UpdateNonStellarStr)
+        strength_layout.addLayout(non_stellar_row)
 
-        # non-stellar strength display
-        self.non_stellar_str_display = tk.StringVar(value=f"{self.non_stellar_str_var.get():.2f}")
-        ttk.Label(
-            non_stellar_str_frame,
-            textvariable=self.non_stellar_str_display,
-            width=5
-        ).pack(side=tk.LEFT)
-
-        # stellar strength frame
-        stellar_str_frame = ttk.Frame(strength_frame)
-        stellar_str_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(stellar_str_frame, text=" Stellar Strength:", width=20).pack(side=tk.LEFT)
-
-        # stellar strength slider
-        self.stellar_str_var = tk.DoubleVar(value=0.55)
-        stellar_str_scale = ttk.Scale(
-            stellar_str_frame,
-            from_=0.0,
-            to=1.0,
-            orient=tk.HORIZONTAL,
-            variable=self.stellar_str_var,
-            length=200
+        # Stellar strength slider (range 0.0–1.0, stored as int 0–100)
+        stellar_row = QHBoxLayout()
+        stellar_label = QLabel("Stellar Strength:")
+        stellar_label.setFixedWidth(130)
+        stellar_row.addWidget(stellar_label)
+        self.stellar_str_slider = QSlider(Qt.Orientation.Horizontal)
+        self.stellar_str_slider.setMinimum(0)
+        self.stellar_str_slider.setMaximum(100)
+        self.stellar_str_slider.setValue(55)
+        stellar_row.addWidget(self.stellar_str_slider, 1)
+        self.stellar_str_label = QLabel("0.55")
+        self.stellar_str_label.setFixedWidth(35)
+        stellar_row.addWidget(self.stellar_str_label)
+        self.stellar_str_slider.valueChanged.connect(
+            lambda v: self.stellar_str_label.setText(f"{v / 100:.2f}")
         )
-        stellar_str_scale.pack(side=tk.LEFT, padx=10, expand=True)
-        self.stellar_str_var.trace_add("write", self.UpdateStellarStr)
+        strength_layout.addLayout(stellar_row)
+        layout.addWidget(strength_box)
 
-        # stellar strength display
-        self.stellar_str_display = tk.StringVar(value=f"{self.stellar_str_var.get():.2f}")
-        ttk.Label(
-            stellar_str_frame,
-            textvariable=self.stellar_str_display,
-            width=5
-        ).pack(side=tk.LEFT)
-        
-        # options frame
-        options_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
-        options_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Options group box
+        options_box = QGroupBox(" Options ")
+        options_layout = QVBoxLayout()
+        options_box.setLayout(options_layout)
+        options_box.setContentsMargins(8, 23, 8, 13)
 
-        # GPU Checkbox
-        self.use_gpu_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            options_frame,
-            text="Use GPU",
-            variable=self.use_gpu_var,
-            style="TCheckbutton"
-        ).pack(anchor=tk.W, pady=2)
+        self.use_gpu_check = QCheckBox("Use GPU")
+        self.use_gpu_check.setChecked(True)
+        options_layout.addWidget(self.use_gpu_check)
 
-        # Sharpen channels separately checkbox
-        self.sharpen_channels_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            options_frame,
-            text="Sharpen channels separately",
-            variable=self.sharpen_channels_var,
-            style="TCheckbutton"
-        ).pack(anchor=tk.W, pady=2)
+        self.sharpen_channels_check = QCheckBox("Sharpen channels separately")
+        self.sharpen_channels_check.setChecked(False)
+        options_layout.addWidget(self.sharpen_channels_check)
 
-        # Use automatic PSF checkbox
-        self.use_auto_psf_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            options_frame,
-            text="Use automatic PSF",
-            variable=self.use_auto_psf_var,
-            style="TCheckbutton",
-        ).pack(anchor=tk.W, pady=2)
+        self.use_auto_psf_check = QCheckBox("Use automatic PSF")
+        self.use_auto_psf_check.setChecked(True)
+        options_layout.addWidget(self.use_auto_psf_check)
+        layout.addWidget(options_box)
 
-        # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=10)
-        self.apply_btn = ttk.Button(
-            button_frame,
-            text="Apply",
-            command=self.OnApply,
-            style="TButton"
-        )
-        self.apply_btn.pack(side=tk.LEFT, padx=5)
+        # Apply button
+        button_row = QHBoxLayout()
+        self.apply_btn = QPushButton("Apply")
+        self.apply_btn.setFixedWidth(80)
+        self.apply_btn.clicked.connect(self.OnApply)
+        button_row.addWidget(self.apply_btn)
+        layout.addLayout(button_row)
 
-    def UpdateNonStellarPSF(self, *args):
-        """Non-stellar PSF slider callback"""
-        self.non_stellar_psf_display.set(f"{self.non_stellar_psf_var.get():.1f}")
-
-    def UpdateNonStellarStr(self, *args):
-        """Non-stellar strength slider callback"""
-        self.non_stellar_str_display.set(f"{self.non_stellar_str_var.get():.2f}")
-
-    def UpdateStellarStr(self, *args):
-        """Stellar strength slider callback"""
-        self.stellar_str_display.set(f"{self.stellar_str_var.get():.2f}")
+    def _sharpening_mode(self):
+        """Return the currently selected sharpening mode string."""
+        if self.stellar_only_radio.isChecked():
+            return "Stellar Only"
+        if self.non_stellar_only_radio.isChecked():
+            return "Non-Stellar Only"
+        return "Both"
 
     def OnApply(self):
         """Handle apply button click."""
         if not self.siril.is_image_loaded():
-            self.siril.error_messagebox("No image loaded")
+            QMessageBox.critical(self, "Error", "No image loaded!")
             return
-        self.apply_btn.state(['disabled'])
-        self.root.after(0, self.RunApplyChanges)
-
-    def RunApplyChanges(self):
-        """Run Apply changes in a separate thread to avoid blocking the GUI."""
+        self.apply_btn.setEnabled(False)
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
 
     async def RunCosmicClarity(self, inputFile, outputFile):
@@ -223,35 +179,39 @@ class SirilCosmicClarityInterface:
         try:
             # setiastro sharpen doesn't like it if you don't pass in all the arguments, 
             # even if you don't use them, e.g. PSF strength
+            mode = self._sharpening_mode()
+            stellar_str = f"{self.stellar_str_slider.value() / 100:.2f}"
+            non_stellar_str = f"{self.non_stellar_str_slider.value() / 100:.2f}"
+            non_stellar_psf = f"{self.non_stellar_psf_slider.value() / 10:.1f}"
+
             command = [
                 sharpenExecutable,
                 "cc",
                 "sharpen",
                 f"-i={inputFile}",
                 f"-o={outputFile}",
-                f"--sharpening-mode={self.sharpening_mode_var.get()}",
-                f"--stellar-amount={self.stellar_str_display.get()}",
-                f"--nonstellar-amount={self.non_stellar_str_display.get()}",
-                f"--nonstellar-psf={self.non_stellar_psf_display.get()}",
+                f"--sharpening-mode={mode}",
+                f"--stellar-amount={stellar_str}",
+                f"--nonstellar-amount={non_stellar_str}",
+                f"--nonstellar-psf={non_stellar_psf}",
             ]
 
-            if not self.use_gpu_var.get():
+            if not self.use_gpu_check.isChecked():
                 command.append("--disable_gpu")
 
-            if self.sharpen_channels_var.get():
+            if self.sharpen_channels_check.isChecked():
                 command.append("--sharpen_channels_separately")
 
-            if self.use_auto_psf_var.get():
+            if self.use_auto_psf_check.isChecked():
                 command.append("--auto-psf")
 
-            #print(f"Running command: {' '.join(command)}")
-            self.siril.log(f"Sharpening mode: {self.sharpening_mode_var.get()}", s.LogColor.BLUE)
-            self.siril.log(f"Stellar sharpening: {self.stellar_str_display.get()}", s.LogColor.BLUE)
-            self.siril.log(f"Non-stellar sharpening: {self.non_stellar_str_display.get()}", s.LogColor.BLUE)
-            if self.use_auto_psf_var.get():
+            self.siril.log(f"Sharpening mode: {mode}", s.LogColor.BLUE)
+            self.siril.log(f"Stellar sharpening: {stellar_str}", s.LogColor.BLUE)
+            self.siril.log(f"Non-stellar sharpening: {non_stellar_str}", s.LogColor.BLUE)
+            if self.use_auto_psf_check.isChecked():
                 self.siril.log("PSF: auto", s.LogColor.BLUE)
             else:
-                self.siril.log(f"PSF: {self.non_stellar_psf_display.get()}", s.LogColor.BLUE)
+                self.siril.log(f"PSF: {non_stellar_psf}", s.LogColor.BLUE)
 
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -273,7 +233,7 @@ class SirilCosmicClarityInterface:
                     if match:
                         percentage = float(match.group(1))
                         self.siril.update_progress("Sharpening...", percentage / 100)
- 
+
                 buffer = lines[-1]
 
             await process.wait()
@@ -286,7 +246,7 @@ class SirilCosmicClarityInterface:
                     sharpenExecutable,
                     error_message
                 )
-            
+
             return True
 
         except Exception as e:
@@ -297,7 +257,7 @@ class SirilCosmicClarityInterface:
         try:
             # claim the processing thread
             with self.siril.image_lock():
-               # get the current image filename and construct our new temp file names
+                # get the current image filename and construct our new temp file names
                 cwd = os.path.dirname(self.siril.get_image_filename())
                 inputFile = os.path.join(cwd, "cc-sharpen-temp-input.fits")
                 outputFile = os.path.join(cwd, "cc-sharpen-temp-output.fits")
@@ -317,15 +277,16 @@ class SirilCosmicClarityInterface:
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
-                        save_state = f"CC sharpening: '{self.sharpening_mode_var.get()}', "
-                        if self.sharpening_mode_var.get() == "Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f"stellar={self.stellar_str_var.get()}, "
-                        if self.sharpening_mode_var.get() == "Non-Stellar Only" or self.sharpening_mode_var.get() == "Both":
-                            save_state += f"non-stellar={self.non_stellar_str_var.get()}, "
-                        if self.use_auto_psf_var.get():
+                        mode = self._sharpening_mode()
+                        save_state = f"CC sharpening: '{mode}', "
+                        if mode in ("Stellar Only", "Both"):
+                            save_state += f"stellar={self.stellar_str_slider.value() / 100:.2f}, "
+                        if mode in ("Non-Stellar Only", "Both"):
+                            save_state += f"non-stellar={self.non_stellar_str_slider.value() / 100:.2f}, "
+                        if self.use_auto_psf_check.isChecked():
                             save_state += "PSF: auto"
                         else:
-                            save_state += f"PSF={self.non_stellar_psf_display.get()}"
+                            save_state += f"PSF={self.non_stellar_psf_slider.value() / 10:.1f}"
                         self.siril.undo_save_state(save_state)
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Sharpening complete.", s.LogColor.GREEN)
@@ -341,16 +302,16 @@ class SirilCosmicClarityInterface:
             if os.path.exists(outputFile):
                 os.remove(outputFile)
 
-            # always modify tkinter widgets from the main thread    
-            self.root.after(0, lambda: self.apply_btn.state(['!disabled']))
+            # re-enable the Apply button from the main thread via signal
+            self._enable_apply.emit()
             self.siril.reset_progress()
 
 def main():
     try:
-        root = ThemedTk()
-        SirilCosmicClarityInterface(root)
-        sv_ttk.set_theme("dark")
-        root.mainloop()
+        app = QApplication(sys.argv)
+        window = SirilCosmicClarityInterface()
+        window.show()
+        sys.exit(app.exec())
     except Exception as e:
         print(f"Error initializing application: {str(e)}")
         sys.exit(1)

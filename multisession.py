@@ -30,10 +30,10 @@ def main():
             siril.cmd("cd", os.path.join(entry, "lights"))
             siril.cmd("convert", "light", "-out=../process")
 
-            # calibrate lights
+            # calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=dark -cfa -equalize_cfa -debayer
             siril.cmd("cd", "../process")
             siril.cmd("calibrate", "light", "-dark=../masters/dark_stacked", "-flat=../masters/flat_stacked", 
-                      "-cc=dark", "-cfa", "-equalize_cfa")
+                      "-cc=dark", "-cfa", "-equalize_cfa", "-debayer")
 
             siril.cmd("cd", "../..")
 
@@ -42,15 +42,13 @@ def main():
     siril.cmd("cd", "process")
     siril.cmd("merge", *mergeDirs)
 
-    # register lights
-    siril.cmd("register", "pp_merge", "-drizzle",  "-scale=1.0", "-pixfrac=1.0", "-kernel=square")
+    # register pp_merge -interp=lanczos4
+    siril.cmd("register", "pp_merge", "-interp=lanczos4")
 
     # stack the merged results
-    siril.cmd("stack", "r_pp_merge", "rej", "3", "3", "-norm=addscale", "-output_norm", "-rgb_equal", "-32b", "-out=../result")
+    siril.cmd("stack", "r_pp_merge", "rej", "3", "3", "-norm=addscale", "-filter-wfwhm=3.0k", "-output_norm", "-32b", "-out=../result")
     siril.cmd("cd", "..")
     siril.cmd("load", "result")
-    siril.cmd("platesolve")
-    siril.cmd("save", "result")
     siril.disconnect()
 
 if __name__ == "__main__":

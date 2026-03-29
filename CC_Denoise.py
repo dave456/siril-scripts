@@ -19,7 +19,8 @@ import threading
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox
+    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox,
+    QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from astropy.io import fits
@@ -123,6 +124,24 @@ class SirilDenoiseInterface(QWidget):
         self.separate_channels_check = QCheckBox("Separate RGB channels")
         self.separate_channels_check.setChecked(False)
         options_layout.addWidget(self.separate_channels_check)
+
+        # Pre-stretch row
+        pre_stretch_row = QHBoxLayout()
+        self.pre_stretch_check = QCheckBox("Pre-stretch")
+        self.pre_stretch_check.setChecked(False)
+        pre_stretch_row.addWidget(self.pre_stretch_check)
+        self.pre_stretch_spin = QDoubleSpinBox()
+        self.pre_stretch_spin.setDecimals(3)
+        self.pre_stretch_spin.setMinimum(0.001)
+        self.pre_stretch_spin.setMaximum(0.999)
+        self.pre_stretch_spin.setValue(0.100)
+        self.pre_stretch_spin.setSingleStep(0.001)
+        self.pre_stretch_spin.setFixedWidth(80)
+        self.pre_stretch_spin.setEnabled(False)
+        pre_stretch_row.addWidget(self.pre_stretch_spin)
+        pre_stretch_row.addStretch()
+        self.pre_stretch_check.toggled.connect(self.pre_stretch_spin.setEnabled)
+        options_layout.addLayout(pre_stretch_row)
         layout.addWidget(options_box)
 
         # Apply Button
@@ -211,6 +230,9 @@ class SirilDenoiseInterface(QWidget):
             return False
 
     async def ApplyChanges(self):
+        pre_stretch = self.pre_stretch_check.isChecked()
+        m = self.pre_stretch_spin.value() if pre_stretch else None
+
         try:
             # Claim the processing thread
             with self.siril.image_lock():
@@ -221,6 +243,9 @@ class SirilDenoiseInterface(QWidget):
 
                 # get current image data and save to our temp input file
                 data = self.siril.get_image_pixeldata()
+                if pre_stretch:
+                    self.siril.log(f"Pre-stretch: {m:.3f}", s.LogColor.BLUE)
+                    data = mtf(m, data)
                 hdu = fits.PrimaryHDU(data)
                 hdu.writeto(inputFile, overwrite=True)
 
@@ -235,10 +260,16 @@ class SirilDenoiseInterface(QWidget):
                         data = hdul[0].data
                         if data.dtype != np.float32:
                             data = np.array(data, dtype=np.float32)
+                        if pre_stretch:
+                            inv_m = 1.0 - m
+                            data = mtf(inv_m, data)
                         denoise_mode = "luminance" if self.luminance_radio.isChecked() else "full"
-                        self.siril.undo_save_state(f"CC denoise: mode='{denoise_mode}' "
-                                                   f"luma={self.lum_slider.value() / 100:.2f} "
-                                                   f"color={self.color_slider.value() / 100:.2f}")
+                        undo_state = (f"CC denoise: mode='{denoise_mode}' "
+                                      f"luma={self.lum_slider.value() / 100:.2f} "
+                                      f"color={self.color_slider.value() / 100:.2f}")
+                        if pre_stretch:
+                            undo_state += f", pre-stretch={m:.3f}"
+                        self.siril.undo_save_state(undo_state)
                         self.siril.set_image_pixeldata(data)
                     self.siril.log("Denoise complete.", s.LogColor.GREEN)
                 else:
@@ -257,6 +288,14 @@ class SirilDenoiseInterface(QWidget):
             # re-enable the Apply button from the main thread via signal
             self._enable_apply.emit()
             self.siril.reset_progress()
+
+def mtf(m, img):
+    """Midtones transfer function. Returns ((m-1)*x) / ((2m-1)*x - m)"""
+    if m == 0.5:
+        return img
+    clipped = np.clip(img, 0, 1)
+    return ((m - 1) * clipped) / (((2 * m - 1) * clipped) - m)
+
 
 def main():
     try:

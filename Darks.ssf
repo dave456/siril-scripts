@@ -1,6 +1,7 @@
 #
 # process darks
 #
+requires 1.3.4
 
 cd darks
 convert dark -out=../process

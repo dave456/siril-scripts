@@ -127,7 +127,7 @@ class SirilDenoiseInterface(QWidget):
 
         # Pre-stretch row
         pre_stretch_row = QHBoxLayout()
-        self.pre_stretch_check = QCheckBox("Pre-stretch")
+        self.pre_stretch_check = QCheckBox("Pre-stretch:")
         self.pre_stretch_check.setChecked(False)
         pre_stretch_row.addWidget(self.pre_stretch_check)
         self.pre_stretch_spin = QDoubleSpinBox()

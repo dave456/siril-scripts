@@ -21,26 +21,30 @@ seqextract_HaOIII pp_light
 # We drizzle the Ha channel at a 2x scale, because it has half the size of the OIII.
 # Using a pixfrac > 1.0 helps to reduce noise with some loss of resolution.
 # Note: adjusting pixfrac down to 1.0 can be ok if you have enough subs
-register Ha_pp_light -drizzle -scale=2.0 -pixfrac=1.1 -kernel=square
+register Ha_pp_light -drizzle -scale=2.0 -pixfrac=0.80 -kernel=square
 
 # Register OIII channel
 # Using lanczos4 interpolation for the OIII channel can sometimes yield better results.
 # Generally, drizzle seems to provide the best results, but lanczos4 is left here as an option.
 #register OIII_pp_light -interp=lanczos4
-register OIII_pp_light -drizzle -scale=1.0 -pixfrac=1.0 -kernel=square
+register OIII_pp_light -drizzle -scale=2.0 -pixfrac=0.80 -kernel=square
 
 # Stack OIII channel
-stack r_OIII_pp_light rej 3 3 -norm=addscale -filter-wfwhm=3.0k -32b -out=results_01
+stack r_OIII_pp_light rej 3 3 -norm=addscale -32b -out=results_01
+load results_01.fits
+resample .5
+save results_01.fits
+close
 
 # Stack Ha channel
-stack r_Ha_pp_light rej 3 3 -norm=addscale -filter-wfwhm=3.0k -32b -out=results_02
+stack r_Ha_pp_light rej 3 3 -norm=addscale -32b -out=results_02
 
 # Align and crop the result images
 register results -2pass
 seqapplyreg results -framing=min
 
 # Save OIII final result
-load results_01
+load r_results_01
 save ../OIII_results
 
 # Save Ha final result

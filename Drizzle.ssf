@@ -16,7 +16,7 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 register pp_light -drizzle -scale=2.0 -pixfrac=0.75 -kernel=square
 
 # stack and filter on wfwhm
-stack r_pp_light rej 3 3 -norm=addscale -32b -out=../results
+stack r_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=../results
 
 cd ..
 load results

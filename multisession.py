@@ -117,7 +117,7 @@ class MultisessionInterface(QWidget):
                 self.siril.cmd("register", "pp_merge", "-interp=lanczos4")
 
             self.siril.cmd("stack", "r_pp_merge", "rej", "3", "3",
-                           "-norm=addscale", "-filter-wfwhm=3.0k", "-output_norm", "-32b", "-out=../result")
+                           "-norm=addscale", "-output_norm", "-32b", "-out=../result")
             self.siril.cmd("cd", "..")
             self.siril.cmd("load", "result")
             self.siril.log("Stacking complete.", s.LogColor.GREEN)

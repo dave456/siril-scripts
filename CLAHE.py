@@ -12,8 +12,6 @@ sirilpy.ensure_installed("numpy")
 
 import sys
 import cv2
-import asyncio
-import subprocess
 import threading
 import numpy as np
 
@@ -21,17 +19,28 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QGroupBox, QSlider, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 
 
 class SirilBGEInterface(QWidget):
-    _enable_apply = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Histogram Equalization")
         self.setFixedWidth(450)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+
+        self._original_data = None
+        self._applied = False
+        self._cancelled = False
+        self._preview_showing = True  # True = CLAHE result visible, False = original visible
+
+        # Preview thread state
+        self._preview_lock = threading.Lock()
+        self._preview_running = False
+        self._preview_queued = False
+        self._preview_finished = threading.Event()
+        self._preview_finished.set()
 
         # Initialize Siril connection
         self.siril = sirilpy.SirilInterface()
@@ -43,7 +52,21 @@ class SirilBGEInterface(QWidget):
             self.close()
             return
 
-        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
+        if not self.siril.is_image_loaded():
+            QMessageBox.critical(self, "Error", "No image loaded in Siril!")
+            self.close()
+            return
+
+        # Capture original image data before any changes
+        with self.siril.image_lock():
+            self._original_data = self.siril.get_image_pixeldata().copy()
+
+        # Debounce timer: waits 150 ms after the last slider move before updating
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(150)
+        self._preview_timer.timeout.connect(self._schedule_preview)
+
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -69,10 +92,6 @@ class SirilBGEInterface(QWidget):
         self.cliplimit_label.setFixedWidth(40)
         self.cliplimit_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         params_layout.addWidget(self.cliplimit_label, 0, 2)
-        self.cliplimit_slider.valueChanged.connect(
-            lambda v: self.cliplimit_label.setText(f"{v / 10:.2f}")
-        )
-
         # Row 1 — Tile Size (range 4–256)
         params_layout.addWidget(QLabel("Tile Size:"), 1, 0)
         self.tilesize_slider = QSlider(Qt.Orientation.Horizontal)
@@ -84,9 +103,6 @@ class SirilBGEInterface(QWidget):
         self.tilesize_label.setFixedWidth(40)
         self.tilesize_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         params_layout.addWidget(self.tilesize_label, 1, 2)
-        self.tilesize_slider.valueChanged.connect(
-            lambda v: self.tilesize_label.setText(str(v))
-        )
 
         # Row 2 — Strength (range 0.01–1.0, stored as int 1–100)
         params_layout.addWidget(QLabel("Strength:"), 2, 0)
@@ -99,89 +115,191 @@ class SirilBGEInterface(QWidget):
         self.strength_label.setFixedWidth(40)
         self.strength_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         params_layout.addWidget(self.strength_label, 2, 2)
-        self.strength_slider.valueChanged.connect(
-            lambda v: self.strength_label.setText(f"{v / 100:.2f}")
-        )
 
-        # Row 3 — Shadow Mask (range 1–100): protects dark/shadow regions
-        params_layout.addWidget(QLabel("Shadow Mask:"), 3, 0)
+        # Connect CLAHE parameter sliders to the unified handler
+        self.cliplimit_slider.valueChanged.connect(self._on_slider_changed)
+        self.tilesize_slider.valueChanged.connect(self._on_slider_changed)
+        self.strength_slider.valueChanged.connect(self._on_slider_changed)
+
+        layout.addWidget(params_box)
+
+        # Masking group box
+        mask_box = QGroupBox(" Masking ")
+        mask_layout = QGridLayout()
+        mask_layout.setColumnStretch(1, 1)
+        mask_box.setLayout(mask_layout)
+        mask_box.setContentsMargins(8, 23, 8, 13)
+
+        # Row 0 — Shadow Mask (range 1–100): protects dark/shadow regions
+        mask_layout.addWidget(QLabel("Shadow Mask:"), 0, 0)
         self.masklevel_slider = QSlider(Qt.Orientation.Horizontal)
         self.masklevel_slider.setMinimum(1)
         self.masklevel_slider.setMaximum(100)
         self.masklevel_slider.setValue(80)
-        params_layout.addWidget(self.masklevel_slider, 3, 1)
+        mask_layout.addWidget(self.masklevel_slider, 0, 1)
         self.masklevel_label = QLabel("80")
         self.masklevel_label.setFixedWidth(40)
         self.masklevel_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        params_layout.addWidget(self.masklevel_label, 3, 2)
-        self.masklevel_slider.valueChanged.connect(
-            lambda v: self.masklevel_label.setText(str(v))
-        )
+        mask_layout.addWidget(self.masklevel_label, 0, 2)
 
-        # Row 4 — Highlight Mask (range 1–100): protects bright/highlight regions
-        params_layout.addWidget(QLabel("Highlight Mask:"), 4, 0)
+        # Row 1 — Highlight Mask (range 1–100): protects bright/highlight regions
+        mask_layout.addWidget(QLabel("Highlight Mask:"), 1, 0)
         self.highlightlevel_slider = QSlider(Qt.Orientation.Horizontal)
         self.highlightlevel_slider.setMinimum(1)
         self.highlightlevel_slider.setMaximum(100)
         self.highlightlevel_slider.setValue(100)
-        params_layout.addWidget(self.highlightlevel_slider, 4, 1)
+        mask_layout.addWidget(self.highlightlevel_slider, 1, 1)
         self.highlightlevel_label = QLabel("100")
         self.highlightlevel_label.setFixedWidth(40)
         self.highlightlevel_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        params_layout.addWidget(self.highlightlevel_label, 4, 2)
-        self.highlightlevel_slider.valueChanged.connect(
-            lambda v: self.highlightlevel_label.setText(str(v))
-        )
+        mask_layout.addWidget(self.highlightlevel_label, 1, 2)
 
-        layout.addWidget(params_box)
+        self.masklevel_slider.valueChanged.connect(self._on_slider_changed)
+        self.highlightlevel_slider.valueChanged.connect(self._on_slider_changed)
 
-        # Apply button
+        layout.addWidget(mask_box)
+
+        # Apply / Toggle Preview buttons
         button_row = QHBoxLayout()
+        self.toggle_btn = QPushButton("Show Original")
+        self.toggle_btn.setFixedWidth(100)
+        self.toggle_btn.clicked.connect(self.OnTogglePreview)
+        button_row.addWidget(self.toggle_btn)
+
         self.apply_btn = QPushButton("Apply")
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnApply)
         button_row.addWidget(self.apply_btn)
+        
         layout.addLayout(button_row)
 
-    def OnApply(self):
-        """Callback for the Apply button."""
-        if not self.siril.is_image_loaded():
-            QMessageBox.critical(self, "Error", "No image loaded!")
+    def OnTogglePreview(self):
+        """Switch between showing the CLAHE result and the original image."""
+        self._preview_showing = not self._preview_showing
+        if self._preview_showing:
+            self.toggle_btn.setText("Show Original")
+            self._schedule_preview()
+        else:
+            self._preview_timer.stop()
+            # Wait for any running preview and then show the original
+            self._preview_finished.wait(timeout=5.0)
+            try:
+                with self.siril.image_lock():
+                    self.siril.set_image_pixeldata(self._original_data)
+            except Exception as e:
+                self.siril.log(f"Toggle error: {e}", sirilpy.LogColor.SALMON)
+            self.toggle_btn.setText("Show Preview")
+
+    def _on_slider_changed(self):
+        self.cliplimit_label.setText(f"{self.cliplimit_slider.value() / 10:.2f}")
+        self.tilesize_label.setText(str(self.tilesize_slider.value()))
+        self.strength_label.setText(f"{self.strength_slider.value() / 100:.2f}")
+        self.masklevel_label.setText(str(self.masklevel_slider.value()))
+        self.highlightlevel_label.setText(str(self.highlightlevel_slider.value()))
+        if self._preview_showing:
+            self._preview_timer.start()  # restarts the 150 ms debounce window
+
+    def _schedule_preview(self):
+        if self._cancelled:
             return
-        self.apply_btn.setEnabled(False)
-        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
+        with self._preview_lock:
+            if self._preview_running:
+                self._preview_queued = True
+                return
+            self._preview_running = True
+            self._preview_finished.clear()
+        threading.Thread(target=self._run_preview, daemon=True).start()
 
-    async def ApplyChanges(self):
-        """Apply CLAHE."""
+    def _run_preview(self):
         try:
-            # Claim the processing thread
-            with self.siril.image_lock():
+            while True:
+                if self._cancelled or not self._preview_showing:
+                    break
 
-                # Read user input values
-                smoothing = self.cliplimit_slider.value() / 10.0
-                mask_level = self.masklevel_slider.value()
-                highlight_level = self.highlightlevel_slider.value()
+                clip_limit = self.cliplimit_slider.value() / 10.0
                 tile_size = self.tilesize_slider.value()
                 strength = self.strength_slider.value() / 100.0
+                mask_level = self.masklevel_slider.value()
+                highlight_level = self.highlightlevel_slider.value()
 
-                # grab the current image data from siril
-                data = self.siril.get_image_pixeldata()
+                result = basic_clahe(
+                    self._original_data,
+                    strength=strength,
+                    clip_limit=clip_limit,
+                    tile_size=tile_size,
+                    mask_level=mask_level,
+                    highlight_level=highlight_level,
+                )
 
-                img = basic_clahe(data, strength=strength, clip_limit=smoothing, tile_size=tile_size, mask_level=mask_level, highlight_level=highlight_level)
-                self.siril.undo_save_state("CLAHE")
-                self.siril.set_image_pixeldata(img)
+                if not self._cancelled:
+                    try:
+                        with self.siril.image_lock():
+                            self.siril.set_image_pixeldata(result)
+                    except Exception as e:
+                        self.siril.log(f"Preview update error: {e}", sirilpy.LogColor.SALMON)
 
-                self.siril.log("CLAHE completed.", sirilpy.LogColor.GREEN)
-
-        except subprocess.CalledProcessError as e:
-            self.siril.log(f"Error occurred while running GraXpert: {e}", sirilpy.LogColor.SALMON)
-
-        except Exception as e:
-            self.siril.log(f"Error in script: {str(e)}", sirilpy.LogColor.SALMON)
-
+                with self._preview_lock:
+                    if not self._preview_queued or self._cancelled:
+                        self._preview_running = False
+                        break
+                    self._preview_queued = False
         finally:
-            self.siril.reset_progress()
-            self._enable_apply.emit()
+            self._preview_finished.set()
+
+    def OnApply(self):
+        """Save undo state and commit the current preview as the final result."""
+        if self._original_data is None:
+            return
+
+        self.apply_btn.setEnabled(False)
+        self.toggle_btn.setEnabled(False)
+
+        clip_limit = self.cliplimit_slider.value() / 10.0
+        tile_size = self.tilesize_slider.value()
+        strength = self.strength_slider.value() / 100.0
+        mask_level = self.masklevel_slider.value()
+        highlight_level = self.highlightlevel_slider.value()
+
+        result = basic_clahe(
+            self._original_data,
+            strength=strength,
+            clip_limit=clip_limit,
+            tile_size=tile_size,
+            mask_level=mask_level,
+            highlight_level=highlight_level,
+        )
+
+        try:
+            with self.siril.image_lock():
+                # Restore original so undo_save_state captures the pre-CLAHE state
+                self.siril.set_image_pixeldata(self._original_data)
+                self.siril.undo_save_state("CLAHE")
+                self.siril.set_image_pixeldata(result)
+            self._applied = True
+        except Exception as e:
+            self.siril.log(f"Apply error: {e}", sirilpy.LogColor.SALMON)
+            self.apply_btn.setEnabled(True)
+            self.toggle_btn.setEnabled(True)
+            return
+
+        self.siril.log("CLAHE applied.", sirilpy.LogColor.GREEN)
+        self.close()
+
+    def closeEvent(self, event):
+        self._cancelled = True
+        self._preview_timer.stop()
+
+        # Wait for any in-flight preview thread to finish before restoring
+        self._preview_finished.wait(timeout=10.0)
+
+        if not self._applied and self._original_data is not None:
+            try:
+                with self.siril.image_lock():
+                    self.siril.set_image_pixeldata(self._original_data)
+            except Exception:
+                pass
+
+        super().closeEvent(event)
 
 
 def basic_clahe(image: np.ndarray, strength: float = 0.5, clip_limit: float = 2.0, tile_size: int = 64, mask_level: int = 100, highlight_level: int = 100) -> np.ndarray:

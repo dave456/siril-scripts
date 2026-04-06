@@ -8,7 +8,7 @@
 import sirilpy
 sirilpy.ensure_installed("PyQt6")
 sirilpy.ensure_installed("numpy")
-#sirilpy.ensure_installed("opencv-python")
+sirilpy.ensure_installed("opencv-python")
 
 import sys
 import cv2
@@ -81,17 +81,18 @@ class SirilBGEInterface(QWidget):
         params_box.setLayout(params_layout)
         params_box.setContentsMargins(8, 23, 8, 13)
 
-        # Row 0 — Clip Limit (range 0.1–2.0, stored as int 1–20)
+        # Row 0 — Clip Limit (range 0.1–8.0, stored as int 1–80)
         params_layout.addWidget(QLabel("Clip Limit:"), 0, 0)
         self.cliplimit_slider = QSlider(Qt.Orientation.Horizontal)
         self.cliplimit_slider.setMinimum(1)
-        self.cliplimit_slider.setMaximum(20)
+        self.cliplimit_slider.setMaximum(80)
         self.cliplimit_slider.setValue(20)
         params_layout.addWidget(self.cliplimit_slider, 0, 1)
         self.cliplimit_label = QLabel("2.00")
         self.cliplimit_label.setFixedWidth(40)
         self.cliplimit_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         params_layout.addWidget(self.cliplimit_label, 0, 2)
+
         # Row 1 — Tile Size (range 4–256)
         params_layout.addWidget(QLabel("Tile Size:"), 1, 0)
         self.tilesize_slider = QSlider(Qt.Orientation.Horizontal)
@@ -170,7 +171,7 @@ class SirilBGEInterface(QWidget):
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnApply)
         button_row.addWidget(self.apply_btn)
-        
+
         layout.addLayout(button_row)
 
     def OnTogglePreview(self):

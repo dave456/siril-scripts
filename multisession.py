@@ -14,7 +14,8 @@ import threading
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QGroupBox, QRadioButton, QMessageBox
+    QPushButton, QGroupBox, QRadioButton, QMessageBox,
+    QDoubleSpinBox, QFormLayout
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -52,26 +53,54 @@ class MultisessionInterface(QWidget):
         method_box.setContentsMargins(8, 23, 8, 13)
 
         self.interpolation_radio = QRadioButton("Interpolation (Lanczos4)")
-        self.drizzle_radio = QRadioButton("Drizzle (2x)")
+        self.drizzle_radio = QRadioButton("Drizzle")
         self.drizzle_radio.setChecked(True)
         method_layout.addWidget(self.interpolation_radio)
         method_layout.addWidget(self.drizzle_radio)
         layout.addWidget(method_box)
 
+        drizzle_box = QGroupBox(" Drizzle Options ")
+        drizzle_layout = QFormLayout()
+        drizzle_box.setLayout(drizzle_layout)
+        drizzle_box.setContentsMargins(8, 23, 8, 13)
+
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setDecimals(1)
+        self.scale_spin.setRange(1.0, 4.0)
+        self.scale_spin.setValue(2.0)
+        self.scale_spin.setSingleStep(0.5)
+        drizzle_layout.addRow("Scale:", self.scale_spin)
+
+        self.pixfrac_spin = QDoubleSpinBox()
+        self.pixfrac_spin.setDecimals(2)
+        self.pixfrac_spin.setRange(0.01, 1.0)
+        self.pixfrac_spin.setValue(0.75)
+        self.pixfrac_spin.setSingleStep(0.05)
+        drizzle_layout.addRow("Pixel Fraction:", self.pixfrac_spin)
+
+        layout.addWidget(drizzle_box)
+        self.drizzle_radio.toggled.connect(self.OnDrizzleToggled)
+
         button_row = QHBoxLayout()
-        self.apply_btn = QPushButton("Apply")
+        self.apply_btn = QPushButton("Stack")
         self.apply_btn.setFixedWidth(80)
-        self.apply_btn.clicked.connect(self.OnApply)
+        self.apply_btn.clicked.connect(self.OnStack)
         button_row.addWidget(self.apply_btn)
         layout.addLayout(button_row)
 
-    def OnApply(self):
+    def OnDrizzleToggled(self, checked):
+        self.scale_spin.setEnabled(checked)
+        self.pixfrac_spin.setEnabled(checked)
+
+    def OnStack(self):
         self.apply_btn.setEnabled(False)
         threading.Thread(target=self.ExecuteStacking, daemon=True).start()
 
     def ExecuteStacking(self):
         use_drizzle = self.drizzle_radio.isChecked()
-        method = "Drizzle (2x)" if use_drizzle else "Interpolation (Lanczos4)"
+        scale = self.scale_spin.value()
+        pixfrac = self.pixfrac_spin.value()
+        method = f"Drizzle ({scale:.1f}x)" if use_drizzle else "Interpolation (Lanczos4)"
 
         try:
             self.siril.log(f"Starting multi-session stacking — {method}", s.LogColor.BLUE)
@@ -112,7 +141,7 @@ class MultisessionInterface(QWidget):
             self.siril.cmd("merge", *merge_dirs)
 
             if use_drizzle:
-                self.siril.cmd("register", "pp_merge", "-drizzle", "-scale=2.0", "-pixfrac=0.75", "-kernel=square")
+                self.siril.cmd("register", "pp_merge", "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", "-kernel=square")
             else:
                 self.siril.cmd("register", "pp_merge", "-interp=lanczos4")
 

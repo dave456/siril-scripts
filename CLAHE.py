@@ -274,7 +274,7 @@ class SirilBGEInterface(QWidget):
             with self.siril.image_lock():
                 # Restore original so undo_save_state captures the pre-CLAHE state
                 self.siril.set_image_pixeldata(self._original_data)
-                self.siril.undo_save_state("CLAHE")
+                self.siril.undo_save_state(f"CLAHE: clip={clip_limit:.2f} tiles={tile_size} str={strength:.2f} mask={mask_level}")
                 self.siril.set_image_pixeldata(result)
             self._applied = True
         except Exception as e:

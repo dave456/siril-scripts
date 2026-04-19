@@ -10,29 +10,30 @@ s.ensure_installed("astropy")
 s.ensure_installed("numpy")
 s.ensure_installed("matplotlib")
 s.ensure_installed("opencv-python")
+s.ensure_installed("PyQt6")
 
 from astropy.io import fits
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import sys
 
-import tkinter as tk
-from tkinter import ttk
-from ttkthemes import ThemedTk
-from sirilpy import tksiril
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QVBoxLayout, QWidget, QFrame
 
 
-class SirilHistogramInterface:
-    """ Simple GUI toolbar like button for generating histograms. Always on top."""
-    # constructor
-    def __init__(self, root):
-        self.root = root
-        self.root.title("")
-        self.root.resizable(False, False)
-        self.root.geometry("200x70")
-        self.root.attributes("-topmost", True)
-        self.style = s.tksiril.standard_style()
+class SirilHistogramInterface(QWidget):
+    """Simple always-on-top PyQt6 window for generating histograms."""
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Histogram")
+        self.setFixedSize(128, 60)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self._drag_offset = None
 
         # Initialize Siril connection
         self.siril = s.SirilInterface()
@@ -40,48 +41,88 @@ class SirilHistogramInterface:
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            self.siril.error_messagebox("Failed to connect to Siril")
-            self.close_dialog()
-            return
+            QMessageBox.critical(self, "Histogram", "Failed to connect to Siril")
+            raise
 
         try:
             self.siril.cmd("requires", "1.3.6")
         except s.CommandError:
-            print("Incompatible Siril version")
+            QMessageBox.critical(self, "Histogram", "Incompatible Siril version")
             self.siril.disconnect()
-            self.close_dialog()
-            return
+            raise
 
-        s.tksiril.match_theme_to_siril(self.root, self.siril)
         self.create_widgets()
 
     def create_widgets(self):
         """Creates the GUI widgets for the Histogram Viewer interface."""
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(8, 6, 8, 12)
+        main_layout.setSpacing(4)
 
-        # Action Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=10)
+        # Small dedicated strip to make the compact window easier to drag.
+        self.drag_strip = QFrame()
+        self.drag_strip.setFixedHeight(8)
+        self.drag_strip.setCursor(Qt.CursorShape.SizeAllCursor)
+        main_layout.addWidget(self.drag_strip)
 
-        close_btn = ttk.Button(
-            button_frame,
-            text="Histogram",
-            command=self.OnView,
-            style="TButton"
-        )
-        close_btn.pack(side=tk.LEFT, padx=5)
+        histogram_btn = QPushButton("Hist")
+        histogram_btn.setFixedSize(78, 24)
+        btn_font = QFont(histogram_btn.font())
+        btn_font.setPointSize(9)
+        histogram_btn.setFont(btn_font)
+        histogram_btn.clicked.connect(self.on_view)
+        main_layout.addWidget(histogram_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-    def OnView(self):
+        self.setLayout(main_layout)
+
+    def on_view(self):
         """Handles the Histogram button click event and creates the histogram plot."""
         if not self.siril.is_image_loaded():
-            print("No image loaded.")
+            QMessageBox.information(self, "Histogram", "No image loaded.")
             return
 
         data = self.siril.get_image_pixeldata()
-        # TODO: get siril theme and pass dark=True/False accordingly
-        compute_and_plot_color_hist(data, os.path.basename(self.siril.get_image_filename()), dark=True)
+        compute_and_plot_color_hist(
+            data,
+            os.path.basename(self.siril.get_image_filename()),
+            dark=self._is_dark_theme(),
+        )
+
+    def _is_dark_theme(self):
+        """Infer dark mode from the current Qt palette."""
+        return self.palette().window().color().lightness() < 128
+
+    def mousePressEvent(self, event):
+        """Start moving when press occurs in the drag strip."""
+        if event.button() == Qt.MouseButton.LeftButton and self.drag_strip.geometry().contains(event.pos()):
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Move the window while dragging from the drag strip."""
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """End drag operation."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def closeEvent(self, event):
+        """Disconnect cleanly when closing the window."""
+        try:
+            self.siril.disconnect()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
 def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False):
     """Compute and plot the color histogram of the given image data."""
@@ -156,16 +197,32 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
     if show and not save_path:
-        plt.show()
+        # Avoid nested Qt event loops when running inside an existing QApplication.
+        if QApplication.instance() is not None:
+            plt.show(block=False)
+        else:
+            plt.show()
 
 def main():
+    app = QApplication.instance()
+    owns_app = app is None
+    if owns_app:
+        app = QApplication(sys.argv)
+
+    window = None
     try:
-        root = ThemedTk()
-        SirilHistogramInterface(root)
-        root.mainloop()
+        window = SirilHistogramInterface()
+        window.show()
+        if owns_app:
+            app.exec()
     except Exception as e:
         print(f"Error initializing application: {str(e)}")
-        return
+    finally:
+        if window is not None:
+            try:
+                window.siril.disconnect()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

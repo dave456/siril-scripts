@@ -28,7 +28,7 @@ class MultisessionInterface(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Multi-Session Stacking")
+        self.setWindowTitle("Session Stacking")
         self.setFixedWidth(350)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
@@ -103,16 +103,53 @@ class MultisessionInterface(QWidget):
         method = f"Drizzle ({scale:.1f}x)" if use_drizzle else "Interpolation (Lanczos4)"
 
         try:
-            self.siril.log(f"Starting multi-session stacking — {method}", s.LogColor.BLUE)
+            self.siril.log(f"Starting stacking - {method}", s.LogColor.BLUE)
 
             if not os.path.exists("process"):
                 os.makedirs("process")
 
-            merge_dirs = []
-
+            session_dirs = []
             for entry in sorted(os.listdir(base_path)):
                 full_path = os.path.join(base_path, entry)
                 if os.path.isdir(full_path) and entry.startswith(prefix):
+                    session_dirs.append(entry)
+
+            is_single_session = bool(
+                os.path.isdir(os.path.join(base_path, "lights")) and
+                os.path.isdir(os.path.join(base_path, "masters")) and
+                not session_dirs
+            )
+
+            if is_single_session:
+                self.siril.log("Detected single-night folder structure.", s.LogColor.BLUE)
+
+                self.siril.cmd("cd", "lights")
+                self.siril.cmd("convert", "light", "-out=../process")
+                self.siril.cmd("cd", "../process")
+
+                calibrate_args = [
+                    "light",
+                    "-dark=../masters/dark_stacked",
+                    "-flat=../masters/flat_stacked",
+                    "-cc=dark", "-cfa", "-equalize_cfa",
+                ]
+                if not use_drizzle:
+                    calibrate_args.append("-debayer")
+                self.siril.cmd("calibrate", *calibrate_args)
+
+                stack_prefix = "pp_light"
+            else:
+                if not session_dirs:
+                    self.siril.log(
+                        f"No session directories found with prefix '{prefix}', and no top-level lights/masters structure detected.",
+                        s.LogColor.SALMON,
+                    )
+                    return
+
+                self.siril.log("Detected multi-night folder structure.", s.LogColor.BLUE)
+                merge_dirs = []
+
+                for entry in session_dirs:
                     self.siril.log(f"Processing session: {entry}", s.LogColor.BLUE)
                     merge_dirs.append("../" + entry + "/process/pp_light")
 
@@ -132,20 +169,17 @@ class MultisessionInterface(QWidget):
 
                     self.siril.cmd("cd", "../..")
 
-            if not merge_dirs:
-                self.siril.log(f"No session directories found with prefix '{prefix}'.", s.LogColor.SALMON)
-                return
-
-            merge_dirs.append("pp_merge")
-            self.siril.cmd("cd", "process")
-            self.siril.cmd("merge", *merge_dirs)
+                merge_dirs.append("pp_merge")
+                self.siril.cmd("cd", "process")
+                self.siril.cmd("merge", *merge_dirs)
+                stack_prefix = "pp_merge"
 
             if use_drizzle:
-                self.siril.cmd("register", "pp_merge", "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", "-kernel=square")
+                self.siril.cmd("register", stack_prefix, "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", "-kernel=square")
             else:
-                self.siril.cmd("register", "pp_merge", "-interp=lanczos4")
+                self.siril.cmd("register", stack_prefix, "-interp=lanczos4")
 
-            self.siril.cmd("stack", "r_pp_merge", "rej", "3", "3",
+            self.siril.cmd("stack", f"r_{stack_prefix}", "rej", "3", "3",
                            "-norm=addscale", "-output_norm", "-32b", "-out=../result")
             self.siril.cmd("cd", "..")
             self.siril.cmd("load", "result")

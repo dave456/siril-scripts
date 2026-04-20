@@ -22,7 +22,7 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox,
-    QDoubleSpinBox
+    QDoubleSpinBox, QSpinBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -167,7 +167,46 @@ class SirilCosmicClarityInterface(QWidget):
         pre_stretch_row.addStretch()
         self.pre_stretch_check.toggled.connect(self.pre_stretch_spin.setEnabled)
         options_layout.addLayout(pre_stretch_row)
+
         layout.addWidget(options_box)
+
+        # Advanced options group box
+        advanced_box = QGroupBox(" Advanced Options ")
+        advanced_layout = QVBoxLayout()
+        advanced_box.setLayout(advanced_layout)
+        advanced_box.setContentsMargins(8, 23, 8, 13)
+
+        # Chunk size row
+        chunk_row = QHBoxLayout()
+        chunk_label = QLabel("Chunk Size:")
+        chunk_label.setFixedWidth(82)
+        chunk_row.addWidget(chunk_label)
+        self.chunk_size_spin = QSpinBox()
+        self.chunk_size_spin.setMinimum(32)
+        self.chunk_size_spin.setMaximum(8192)
+        self.chunk_size_spin.setSingleStep(32)
+        self.chunk_size_spin.setValue(512)
+        self.chunk_size_spin.setFixedWidth(80)
+        chunk_row.addWidget(self.chunk_size_spin)
+        chunk_row.addStretch()
+        advanced_layout.addLayout(chunk_row)
+
+        # Overlap row
+        overlap_row = QHBoxLayout()
+        overlap_label = QLabel("Overlap:")
+        overlap_label.setFixedWidth(82)
+        overlap_row.addWidget(overlap_label)
+        self.overlap_spin = QSpinBox()
+        self.overlap_spin.setMinimum(0)
+        self.overlap_spin.setMaximum(4096)
+        self.overlap_spin.setSingleStep(32)
+        self.overlap_spin.setValue(64)
+        self.overlap_spin.setFixedWidth(80)
+        overlap_row.addWidget(self.overlap_spin)
+        overlap_row.addStretch()
+        advanced_layout.addLayout(overlap_row)
+
+        layout.addWidget(advanced_box)
 
         # Apply button
         button_row = QHBoxLayout()
@@ -213,6 +252,8 @@ class SirilCosmicClarityInterface(QWidget):
                 f"--stellar-amount={stellar_str}",
                 f"--nonstellar-amount={non_stellar_str}",
                 f"--nonstellar-psf={non_stellar_psf}",
+                f"--chunk-size={self.chunk_size_spin.value()}",
+                f"--overlap={self.overlap_spin.value()}",
             ]
 
             if not self.use_gpu_check.isChecked():
@@ -231,6 +272,8 @@ class SirilCosmicClarityInterface(QWidget):
                 self.siril.log("PSF: auto", s.LogColor.BLUE)
             else:
                 self.siril.log(f"PSF: {non_stellar_psf}", s.LogColor.BLUE)
+            self.siril.log(f"Chunk size: {self.chunk_size_spin.value()}", s.LogColor.BLUE)
+            self.siril.log(f"Overlap: {self.overlap_spin.value()}", s.LogColor.BLUE)
 
             process = await asyncio.create_subprocess_exec(
                 *command,

@@ -21,7 +21,7 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 register pp_light -interp=lanczos4
 
 # stack and filter on wfwhm
-stack r_pp_light rej 3 3 -norm=addscale -output_norm -32b -out=../results
+stack r_pp_light rej 3 3 -weight=wfwhm -norm=addscale -output_norm -32b -out=../results
 
 cd ..
 load results

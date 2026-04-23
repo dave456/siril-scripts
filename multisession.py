@@ -179,7 +179,7 @@ class MultisessionInterface(QWidget):
             else:
                 self.siril.cmd("register", stack_prefix, "-interp=lanczos4")
 
-            self.siril.cmd("stack", f"r_{stack_prefix}", "rej", "3", "3",
+            self.siril.cmd("stack", f"r_{stack_prefix}", "rej", "3", "3", "-weight=wfwhm",
                            "-norm=addscale", "-output_norm", "-32b", "-out=../result")
             self.siril.cmd("cd", "..")
             self.siril.cmd("load", "result")

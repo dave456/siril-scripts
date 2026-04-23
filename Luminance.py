@@ -1,6 +1,10 @@
 #
 # Luminance Channel Extractor and Recombiner
 #
+# This script allows the user to extract the luminance channel from the currently loaded image in Siril
+# and save it as a separate FITS file. The user can then modify the luminance file (denoise, sharpen, etc.) 
+# and then recombine it with the original image.
+#
 # SPDX-License-Identifier: GPL-3.0
 # Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
 #

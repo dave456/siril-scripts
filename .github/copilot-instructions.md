@@ -52,6 +52,7 @@ Before implementing:
 - Commands are Siril's built-in commands (e.g., `cd`, `convert`, `calibrate`, `register`, `stack`, `load`)
 - The typical preprocessing workflow is: `cd` into folder → `convert` → `calibrate` → `register` → `stack`
 - `requires <version>` can be used to enforce a minimum Siril version
+- Siril command reference can be found here: https://siril.readthedocs.io/en/latest/Commands.html
 
 Example snippet:
 ```
@@ -70,6 +71,7 @@ stack r_pp_light rej 3 3 -norm=addscale -32b -out=../results
 - Always import `sirilpy` — either as the full name (`import sirilpy`) or aliased as `s` (`import sirilpy as s`). Both forms are used in the codebase.
 - Call `sirilpy.ensure_installed("<package>")` (or `s.ensure_installed(...)` when using the alias) at the top for any third-party dependencies before importing them
 - Standard third-party libraries: `astropy`, `numpy`, `PyQt6` (for Qt-based GUIs), `tkinter`/`ttkthemes`/`sv_ttk` (for Tk-based GUIs)
+- The python API documentation for SIRIL can be found here: https://siril.readthedocs.io/en/latest/Python-API.html
 
 ### Connecting to Siril
 
@@ -102,15 +104,9 @@ Wrap in try/except for `s.CommandError` if the version requirement needs to be e
 
 ### GUI Style
 
-Scripts use one of two GUI frameworks:
+Prefer PyQt6 for all new scripts:
 
-1. **Tkinter + sv_ttk/ttkthemes** (most scripts):
-   - Create root with `ThemedTk()`, set theme with `sv_ttk.set_theme("dark")`
-   - Use `tksiril.standard_style()` for consistent styling
-   - Use `ttk.LabelFrame`, `ttk.Frame`, `ttk.Scale`, `ttk.Button`, `ttk.Label` for widgets
-   - Update GUI widgets from the main thread only: use `root.after(0, callback)` to schedule UI updates from background threads
-
-2. **PyQt6** (NarrowBandMixer, Star_Reducer, etc.):
+1. **PyQt6** (NarrowBandMixer, Star_Reducer, etc.):
    - Subclass `QWidget` for the main window
    - Set `Qt.WindowType.WindowStaysOnTopHint` to keep the window on top
    - Use `QMessageBox` for error/info dialogs
@@ -157,7 +153,6 @@ if __name__ == "__main__":
 - Calibration frames (darks, flats) are in a `darks/` or `flats/` subdirectory
 - Master calibration files go in `masters/` (e.g., `masters/dark_stacked`, `masters/flat_stacked`)
 - Intermediate processed files go in `process/`
-- Final results go in `results/`
 - The `dev/` directory is excluded from version control (see `.gitignore`)
 
 ## License

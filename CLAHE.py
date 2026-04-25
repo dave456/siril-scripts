@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 
 
-class SirilBGEInterface(QWidget):
+class SirilCLAHEInterface(QWidget):
 
     def __init__(self):
         super().__init__()
@@ -34,6 +34,7 @@ class SirilBGEInterface(QWidget):
         self._applied = False
         self._cancelled = False
         self._preview_showing = True  # True = CLAHE result visible, False = original visible
+        self._preview_dirty = False   # True when current image is an un-applied preview
 
         # Preview thread state
         self._preview_lock = threading.Lock()
@@ -65,7 +66,7 @@ class SirilBGEInterface(QWidget):
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(150)
-        self._preview_timer.timeout.connect(self._schedule_preview)
+        self._preview_timer.timeout.connect(self.SchedulePreview)
 
         self.CreateWidgets()
 
@@ -118,9 +119,9 @@ class SirilBGEInterface(QWidget):
         params_layout.addWidget(self.strength_label, 2, 2)
 
         # Connect CLAHE parameter sliders to the unified handler
-        self.cliplimit_slider.valueChanged.connect(self._on_slider_changed)
-        self.tilesize_slider.valueChanged.connect(self._on_slider_changed)
-        self.strength_slider.valueChanged.connect(self._on_slider_changed)
+        self.cliplimit_slider.valueChanged.connect(self.OnSliderChanged)
+        self.tilesize_slider.valueChanged.connect(self.OnSliderChanged)
+        self.strength_slider.valueChanged.connect(self.OnSliderChanged)
 
         layout.addWidget(params_box)
 
@@ -155,8 +156,8 @@ class SirilBGEInterface(QWidget):
         self.highlightlevel_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         mask_layout.addWidget(self.highlightlevel_label, 1, 2)
 
-        self.masklevel_slider.valueChanged.connect(self._on_slider_changed)
-        self.highlightlevel_slider.valueChanged.connect(self._on_slider_changed)
+        self.masklevel_slider.valueChanged.connect(self.OnSliderChanged)
+        self.highlightlevel_slider.valueChanged.connect(self.OnSliderChanged)
 
         layout.addWidget(mask_box)
 
@@ -179,7 +180,7 @@ class SirilBGEInterface(QWidget):
         self._preview_showing = not self._preview_showing
         if self._preview_showing:
             self.toggle_btn.setText("Show Original")
-            self._schedule_preview()
+            self.SchedulePreview()
         else:
             self._preview_timer.stop()
             # Wait for any running preview and then show the original
@@ -187,20 +188,43 @@ class SirilBGEInterface(QWidget):
             try:
                 with self.siril.image_lock():
                     self.siril.set_image_pixeldata(self._original_data)
+                self._preview_dirty = False
             except Exception as e:
                 self.siril.log(f"Toggle error: {e}", sirilpy.LogColor.SALMON)
             self.toggle_btn.setText("Show Preview")
 
-    def _on_slider_changed(self):
+    def OnSliderChanged(self):
+        shadow = self.masklevel_slider.value()
+        highlight = self.highlightlevel_slider.value()
+
+        # Keep full 1..100 ranges intact, but do not allow the sliders to cross.
+        sender = self.sender()
+        if shadow > highlight:
+            if sender is self.masklevel_slider:
+                self.masklevel_slider.blockSignals(True)
+                self.masklevel_slider.setValue(highlight)
+                self.masklevel_slider.blockSignals(False)
+                shadow = highlight
+            elif sender is self.highlightlevel_slider:
+                self.highlightlevel_slider.blockSignals(True)
+                self.highlightlevel_slider.setValue(shadow)
+                self.highlightlevel_slider.blockSignals(False)
+                highlight = shadow
+            else:
+                self.highlightlevel_slider.blockSignals(True)
+                self.highlightlevel_slider.setValue(shadow)
+                self.highlightlevel_slider.blockSignals(False)
+                highlight = shadow
+
         self.cliplimit_label.setText(f"{self.cliplimit_slider.value() / 10:.2f}")
         self.tilesize_label.setText(str(self.tilesize_slider.value()))
         self.strength_label.setText(f"{self.strength_slider.value() / 100:.2f}")
-        self.masklevel_label.setText(str(self.masklevel_slider.value()))
-        self.highlightlevel_label.setText(str(self.highlightlevel_slider.value()))
+        self.masklevel_label.setText(str(shadow))
+        self.highlightlevel_label.setText(str(highlight))
         if self._preview_showing:
             self._preview_timer.start()  # restarts the 150 ms debounce window
 
-    def _schedule_preview(self):
+    def SchedulePreview(self):
         if self._cancelled:
             return
         with self._preview_lock:
@@ -209,9 +233,9 @@ class SirilBGEInterface(QWidget):
                 return
             self._preview_running = True
             self._preview_finished.clear()
-        threading.Thread(target=self._run_preview, daemon=True).start()
+        threading.Thread(target=self.RunPreview, daemon=True).start()
 
-    def _run_preview(self):
+    def RunPreview(self):
         try:
             while True:
                 if self._cancelled or not self._preview_showing:
@@ -236,6 +260,7 @@ class SirilBGEInterface(QWidget):
                     try:
                         with self.siril.image_lock():
                             self.siril.set_image_pixeldata(result)
+                        self._preview_dirty = True
                     except Exception as e:
                         self.siril.log(f"Preview update error: {e}", sirilpy.LogColor.SALMON)
 
@@ -251,6 +276,9 @@ class SirilBGEInterface(QWidget):
         """Save undo state and commit the current preview as the final result."""
         if self._original_data is None:
             return
+
+        self._preview_timer.stop()
+        self._preview_finished.wait(timeout=10.0)
 
         self.apply_btn.setEnabled(False)
         self.toggle_btn.setEnabled(False)
@@ -276,7 +304,11 @@ class SirilBGEInterface(QWidget):
                 self.siril.set_image_pixeldata(self._original_data)
                 self.siril.undo_save_state(f"CLAHE: clip={clip_limit:.2f} tiles={tile_size} str={strength:.2f} mask={mask_level}")
                 self.siril.set_image_pixeldata(result)
+            self._original_data = result.copy()
             self._applied = True
+            self._preview_dirty = False
+            self._preview_showing = True
+            self.toggle_btn.setText("Show Original")
         except Exception as e:
             self.siril.log(f"Apply error: {e}", sirilpy.LogColor.SALMON)
             self.apply_btn.setEnabled(True)
@@ -284,16 +316,18 @@ class SirilBGEInterface(QWidget):
             return
 
         self.siril.log("CLAHE applied.", sirilpy.LogColor.GREEN)
-        self.close()
+        self.apply_btn.setEnabled(True)
+        self.toggle_btn.setEnabled(True)
 
     def closeEvent(self, event):
+        """ Override for PyQt6 close event. Ensures any running preview thread is stopped and original image is restored if not applied. """
         self._cancelled = True
         self._preview_timer.stop()
 
         # Wait for any in-flight preview thread to finish before restoring
         self._preview_finished.wait(timeout=10.0)
 
-        if not self._applied and self._original_data is not None:
+        if self._preview_dirty and self._original_data is not None:
             try:
                 with self.siril.image_lock():
                     self.siril.set_image_pixeldata(self._original_data)
@@ -398,7 +432,7 @@ def basic_clahe(image: np.ndarray, strength: float = 0.5, clip_limit: float = 2.
 def main():
     try:
         app = QApplication(sys.argv)
-        window = SirilBGEInterface()
+        window = SirilCLAHEInterface()
         window.show()
         sys.exit(app.exec())
     except Exception as e:

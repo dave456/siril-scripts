@@ -70,7 +70,7 @@ stack r_pp_light rej 3 3 -norm=addscale -32b -out=../results
 
 - Always import `sirilpy` — either as the full name (`import sirilpy`) or aliased as `s` (`import sirilpy as s`). Both forms are used in the codebase.
 - Call `sirilpy.ensure_installed("<package>")` (or `s.ensure_installed(...)` when using the alias) at the top for any third-party dependencies before importing them
-- Standard third-party libraries: `astropy`, `numpy`, `PyQt6` (for Qt-based GUIs), `tkinter`/`ttkthemes`/`sv_ttk` (for Tk-based GUIs)
+- Standard third-party libraries: `astropy`, `numpy`, `PyQt6` (for Qt-based GUIs)
 - The python API documentation for SIRIL can be found here: https://siril.readthedocs.io/en/latest/Python-API.html
 
 ### Connecting to Siril

@@ -18,7 +18,7 @@ The pre-processing scripts assume master darks and master flats have already bee
 | GraXpert_Denoise.py | GUI script for GraXpert denoising |
 | Ha_OII_Extract.ssf | Extraction and stacking for flats using dual-band filters (uses drizzle) |
 | Histogram.py | Histogram utility that provides nicer histogram for current image |
-| Multisession.py | Merges and processes lights from multiple imaging sessions |
 | Interpolate.ssf | Stack using lancosz4 interpolation |
 | NarrowBandMixer.py | Narrowband channel mixer script for tweaking colors for Ha/OIII extractions |
+| Stacking.py | Stacks images from single and multiple sessions |
 | Star_Reducer.py | Star reduction script using Bill Blanshans pixelmath expressions (translated to python) |

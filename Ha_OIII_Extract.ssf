@@ -18,23 +18,25 @@ calibrate light -dark=../masters/dark_stacked -flat=../masters/flat_stacked -cc=
 seqextract_HaOIII pp_light
 
 # Register Ha channel
-# We drizzle the Ha channel at a 2x scale, because it has half the size of the OIII.
-# Using a pixfrac > 1.0 helps to reduce noise with some loss of resolution.
-# Note: adjusting pixfrac down to 1.0 can be ok if you have enough subs
+# We drizzle the Ha channel at a 2x scale, because it has half the size of OIII.
+# Tweaking the pixfrac is something of a dark art, try >1.0 for sharper results, <1.0 for smoother results.
+# Watch out for banding artifacts, use false color and histogram autostretch to check for them.
 register Ha_pp_light -drizzle -scale=2.0 -pixfrac=0.80 -kernel=square
 
 # Register OIII channel
-# Using lanczos4 interpolation for the OIII channel can sometimes yield better results.
-# Generally, drizzle seems to provide the best results, but lanczos4 is left here as an option.
-#register OIII_pp_light -interp=lanczos4
-register OIII_pp_light -drizzle -scale=2.0 -pixfrac=0.80 -kernel=square
+# Using lanczos4 interpolation for the OIII channel will typically yield better results.
+# Drizzle can sometimes produce sharper results, but it can also introduce artifacts if not used carefully.
+# If drizzling, you will need to rescale the OIII result back down to match the Ha channel, 
+# which can be done with the resample command after stacking. (commented out lines show how to do this)
+register OIII_pp_light -interp=lanczos4
+#register OIII_pp_light -drizzle -scale=2.0 -pixfrac=0.75 -kernel=square
 
 # Stack OIII channel
 stack r_OIII_pp_light rej 3 3 -norm=addscale -32b -out=results_01
-load results_01.fits
-resample .5
-save results_01.fits
-close
+#load results_01.fits
+#resample .5
+#save results_01.fits
+#close
 
 # Stack Ha channel
 stack r_Ha_pp_light rej 3 3 -norm=addscale -32b -out=results_02

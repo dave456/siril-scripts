@@ -68,10 +68,10 @@ class SirilBGEInterface(QWidget):
         self.smoothing_slider = QSlider(Qt.Orientation.Horizontal)
         self.smoothing_slider.setMinimum(0)
         self.smoothing_slider.setMaximum(100)
-        self.smoothing_slider.setValue(80)
+        self.smoothing_slider.setValue(40)
         smoothing_row.addWidget(self.smoothing_slider, 1)
 
-        self.smoothing_value_label = QLabel("0.80")
+        self.smoothing_value_label = QLabel("0.40")
         self.smoothing_value_label.setFixedWidth(35)
         smoothing_row.addWidget(self.smoothing_value_label)
         self.smoothing_slider.valueChanged.connect(

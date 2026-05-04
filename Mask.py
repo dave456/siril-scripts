@@ -135,7 +135,7 @@ class MaskWindow(QWidget):
             self, 
             "Select mask file", 
             "", 
-            "FITS files (*.fits);;TIFF files (*.tiff *.tif);;All files (*.*)"
+            "TIFF files (*.tiff *.tif);;FITS files (*.fits);;All files (*.*)"
         )
         if file_path:
             self.mask_line.setText(os.path.basename(file_path))
@@ -245,10 +245,21 @@ class MaskWindow(QWidget):
         """
         try:
             if file_path.lower().endswith(('.tif', '.tiff')):
-                mask = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+                mask = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
                 if mask is None:
                     return None
-                mask = np.array(mask, dtype=np.float32) / 255.0
+                mask = np.array(mask, dtype=np.float32)
+                # Normalize based on the original bit depth
+                if mask.dtype == np.uint8:
+                    mask = mask / 255.0
+                elif mask.dtype == np.uint16:
+                    mask = mask / 65535.0
+                else:
+                    # For other types, normalize to [0, 1] range
+                    mask_min = mask.min()
+                    mask_max = mask.max()
+                    if mask_max > mask_min:
+                        mask = (mask - mask_min) / (mask_max - mask_min)
             else:
                 # Assume FITS file
                 with fits.open(file_path) as hdul:
@@ -256,9 +267,10 @@ class MaskWindow(QWidget):
                     if mask is None:
                         return None
                     mask = np.array(mask, dtype=np.float32)
-                    # Normalize to [0, 1]
-                    mask_min = mask.min()
-                    mask_max = mask.max()
+                    # Normalize to [0, 1], handling special values
+                    mask = np.nan_to_num(mask, nan=0.0, posinf=1.0, neginf=0.0)
+                    mask_min = np.nanmin(mask)
+                    mask_max = np.nanmax(mask)
                     if mask_max > mask_min:
                         mask = (mask - mask_min) / (mask_max - mask_min)
             

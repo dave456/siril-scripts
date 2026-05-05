@@ -6,19 +6,21 @@ The pre-processing scripts assume master darks and master flats have already bee
 
 | File | Description |
 |------|-------------|
-| Align_Images.py | Image alignment utility |
-| CC_Denoise.py | GUI front-end script for Cosmic Clarity denoising |
-| CC_Sharpen.py | GUI front-end script for Cosmic Clarity sharpening |
-| CLAHE.py | Contrast local adaptive histogram equalization with simple luma masking and strength |
-| ContinuumSubtraction.py | Continuum subtraction script |
+| Align_Images.py | Image alignment utility that leverages siril star registration functionality. Select any number of files and align. Newly aligned files are created using existing filenames with _aligned suffix. Great for narrowband processing.|
+| CC_Denoise.py | GUI front-end script for Cosmic Clarity denoising. Simplifies existing UI and adds pre-stretch for linear data. |
+| CC_Sharpen.py | GUI front-end script for Cosmic Clarity sharpening. Simplifies existing UI and adds pre-stretch for linear data. |
+| CLAHE.py | Contrast local adaptive histogram equalization with simple luma masking (both light and dark) and strength |
+| ContinuumSubtraction.py | Continuum subtraction script for narrowband processing. |
 | Darks.ssf | Create darks |
-| Drizzle.ssf | Stack using drizzle and my preferred settings |
+| Drizzle.ssf | Stack using drizzle and my preferred settings (deprecated see Stacking.py) |
 | Flats.ssh | Create flats using computed bias based on offset derived from Sony 183 sensor |
-| GraXpert_BGE.py | GUI front-end script for GraXpert background extraction |
-| GraXpert_Denoise.py | GUI script for GraXpert denoising |
-| Ha_OII_Extract.ssf | Extraction and stacking for flats using dual-band filters (uses drizzle) |
-| Histogram.py | Histogram utility that provides nicer histogram for current image |
-| Interpolate.ssf | Stack using lancosz4 interpolation |
-| NarrowBandMixer.py | Narrowband channel mixer script for tweaking colors for Ha/OIII extractions |
-| Stacking.py | Stacks images from single and multiple sessions |
+| GraXpert_BGE.py | GUI front-end script for GraXpert background extraction. Simplified UI |
+| GraXpert_Denoise.py | GUI script for GraXpert denoising. Simplfied UI |
+| Ha_OII_Extract.ssf | Extraction and stacking for OSC cameras using dual-band filters. |
+| Histogram.py | Histogram utility that creates a nice histogram for current image. Provides small button that can be left running. |
+| Interpolate.ssf | Stack using lancosz4 interpolation (deprecated see Stacking.py)  |
+| Luminance.py | Extracts luminance channel from current image, also allows recombination of modified luminance data |
+| Mask.py | Provides masking functionality for siril. Leverages undo stack to allow user to provide mask for the last operation. Supports 8bit/16bit tiff as well as fits files for masking | 
+| NarrowBandMixer.py | Narrowband channel mixer script for blending colors for Ha/OIII extractions, works on both linear and non-linear data. |
+| Stacking.py | Stacks images from single and multiple sessions. Provides simple UI for many stacking options that I use. |
 | Star_Reducer.py | Star reduction script using Bill Blanshans pixelmath expressions (translated to python) |

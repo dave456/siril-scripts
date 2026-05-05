@@ -76,7 +76,6 @@ class MaskWindow(QWidget):
 
         self.mask_file_path = ""
         self.mask_btn = None
-        self.unmask_btn = None
         self.mask_line = None
 
         self.CreateWidgets()
@@ -109,7 +108,7 @@ class MaskWindow(QWidget):
         layout.addWidget(mask_box)
         layout.addSpacing(10)
 
-        # Mask and Unmask buttons
+        # Mask button
         button_row = QHBoxLayout()
         button_row.addStretch()
 
@@ -117,15 +116,8 @@ class MaskWindow(QWidget):
         self.mask_btn.clicked.connect(self.OnMask)
         self.mask_btn.setEnabled(False)
         button_row.addWidget(self.mask_btn)
-
-        button_row.addSpacing(20)
-
-        self.unmask_btn = QPushButton("Unmask")
-        self.unmask_btn.clicked.connect(self.OnUnmask)
-        self.unmask_btn.setEnabled(False)
-        button_row.addWidget(self.unmask_btn)
-
         button_row.addStretch()
+
         layout.addLayout(button_row)
 
 
@@ -150,27 +142,16 @@ class MaskWindow(QWidget):
             return
 
         self.mask_btn.setEnabled(False)
-        self.unmask_btn.setEnabled(False)
         threading.Thread(target=self.RunMaskThread, daemon=True).start()
-
-
-    def OnUnmask(self):
-        """Unmask operation - not yet implemented"""
-        QMessageBox.information(self, "Not Implemented", "Unmask operation is not yet implemented")
-
 
     def OnMaskComplete(self, status):
         """Handle mask operation completion in main thread"""
         self.mask_btn.setEnabled(self.mask_file_path != "")
-        self.unmask_btn.setEnabled(False)
-
 
     def OnError(self, error_msg):
         """Handle error in main thread"""
         QMessageBox.critical(self, "Error", error_msg)
         self.mask_btn.setEnabled(self.mask_file_path != "")
-        self.unmask_btn.setEnabled(False)
-
 
     def OnProgressUpdate(self, message: str, progress: float):
         """Handle progress update in main thread"""
@@ -248,37 +229,60 @@ class MaskWindow(QWidget):
                 mask = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
                 if mask is None:
                     return None
-                mask = np.array(mask, dtype=np.float32)
-                # Normalize based on the original bit depth
-                if mask.dtype == np.uint8:
-                    mask = mask / 255.0
-                elif mask.dtype == np.uint16:
-                    mask = mask / 65535.0
-                else:
-                    # For other types, normalize to [0, 1] range
-                    mask_min = mask.min()
-                    mask_max = mask.max()
-                    if mask_max > mask_min:
-                        mask = (mask - mask_min) / (mask_max - mask_min)
+
+                # If the TIFF has multiple channels, convert to grayscale mask.
+                if mask.ndim == 3:
+                    if mask.shape[2] == 4:
+                        mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2GRAY)
+                    else:
+                        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+                original_dtype = mask.dtype
+                mask = NormalizeMask(mask, original_dtype)
             else:
                 # Assume FITS file
                 with fits.open(file_path) as hdul:
                     mask = hdul[0].data
                     if mask is None:
                         return None
-                    mask = np.array(mask, dtype=np.float32)
-                    # Normalize to [0, 1], handling special values
+
+                    mask = np.array(mask)
+                    mask = np.squeeze(mask)
+                    if mask.ndim == 3:
+                        mask = mask[0]
+
+                    original_dtype = mask.dtype
+                    # Normalize to [0, 1], handling special values first.
                     mask = np.nan_to_num(mask, nan=0.0, posinf=1.0, neginf=0.0)
-                    mask_min = np.nanmin(mask)
-                    mask_max = np.nanmax(mask)
-                    if mask_max > mask_min:
-                        mask = (mask - mask_min) / (mask_max - mask_min)
+                    mask = NormalizeMask(mask, original_dtype)
+
+            if mask.ndim != 2:
+                raise ValueError(f"Mask must be 2D after loading; got shape {mask.shape}")
             
             return mask
         
         except Exception as e:
             self.siril.log(f"Error loading mask file: {e}", s.LogColor.SALMON)
             return None
+
+
+def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarray:
+    """Normalize mask values to [0, 1] while preserving bright=1 semantics."""
+    mask_array = mask_array.astype(np.float32)
+
+    if original_dtype == np.uint8:
+        mask_array = mask_array / 255.0
+    elif original_dtype == np.uint16:
+        mask_array = mask_array / 65535.0
+    else:
+        mask_min = np.nanmin(mask_array)
+        mask_max = np.nanmax(mask_array)
+        if mask_max > mask_min:
+            mask_array = (mask_array - mask_min) / (mask_max - mask_min)
+        else:
+            mask_array = np.zeros_like(mask_array, dtype=np.float32)
+
+    return np.clip(mask_array, 0.0, 1.0).astype(np.float32)
 
 def ApplyMask(current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """
@@ -307,10 +311,12 @@ def ApplyMask(current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np
         # Planes-first: expand mask to match channels dimension
         # mask is (H, W), expand to (1, H, W) then broadcast
         mask_expanded = mask[np.newaxis, :, :]
-        result = current * mask_expanded + previous * (1 - mask_expanded)
+
+        # invert mask for previous image
+        result = previous * mask_expanded + current * (1 - mask_expanded)
     else:
         # 2D case
-        result = current * mask + previous * (1 - mask)
+        result = previous * mask + current * (1 - mask)
     
     return result.astype(np.float32)
 

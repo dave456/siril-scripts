@@ -24,6 +24,7 @@ user-selected region using AAD (Average Absolute Deviation).
 # 3.0.4 Allow user to not select a region and use whole image with warning
 # 3.0.5 CR: Reduce vertical spacing for more compact interface
 # 3.0.6 Copy FITS header to generated files, add history entry for CS operation
+# 3.0.7 Get rid of the FUGLY collasible widgets
 
 
 import sirilpy as s
@@ -149,15 +150,15 @@ class SirilCSWindow(QWidget):
         layout.addWidget(about_group)
 
         # Components selection group
-        comps_group = CollapsibleGroup("Components  ▼")
-        comps_layout = comps_group.content.layout()
-        comps_layout.setContentsMargins(8, 4, 8, 4)
-        comps_layout.setSpacing(6)
+        #comps_group = CollapsibleGroup("Components  ▼")
+        #comps_layout = comps_group.content.layout()
+        #comps_layout.setContentsMargins(8, 4, 8, 4)
+        #comps_layout.setSpacing(6)
 
         # create a box for our columns
-        comps_box = QGroupBox()
+        comps_box = QGroupBox(" Components ")
         comps_box.setLayout(QHBoxLayout())
-        comps_group.content.layout().addWidget(comps_box)
+        #comps_group.content.layout().addWidget(comps_box)
 
         left_col = QVBoxLayout()
         left_col.setSpacing(3)
@@ -212,18 +213,19 @@ class SirilCSWindow(QWidget):
 
         comps_box.layout().addLayout(left_col, 1)
         comps_box.layout().addLayout(right_col, 1)
-        layout.addWidget(comps_group)
+        layout.addWidget(comps_box)
+        layout.addSpacing(10)
 
         # CS generation group
-        csgen_group = CollapsibleGroup("Continuum Subtraction Generation  ▼")
-        csgen_layout = csgen_group.content.layout()
-        csgen_layout.setContentsMargins(8, 4, 8, 4)
-        csgen_layout.setSpacing(6)
+        #csgen_group = CollapsibleGroup("Continuum Subtraction Generation  ▼")
+        #csgen_layout = csgen_group.content.layout()
+        #csgen_layout.setContentsMargins(8, 4, 8, 4)
+        #csgen_layout.setSpacing(6)
         
         # create a box for the components
-        csgen_box = QGroupBox()
+        csgen_box = QGroupBox(" Continuum Subtraction Generation ")
         csgen_box.setLayout(QVBoxLayout())
-        csgen_group.content.layout().addWidget(csgen_box)
+        #csgen_group.content.layout().addWidget(csgen_box)
 
         # drop-down to select which emission line to operate on
         self.emission_desc = QLabel("Emission Line Selection")
@@ -248,8 +250,7 @@ class SirilCSWindow(QWidget):
         btn_row.addWidget(self.plot_check_box)
         btn_row.addStretch()
         csgen_box.layout().addLayout(btn_row)
-
-        csgen_box.layout().addSpacing(10)  # fudge for spacing
+        csgen_box.layout().addSpacing(10)  
 
         # c constant continuum slider
         c_row = QHBoxLayout()
@@ -262,26 +263,31 @@ class SirilCSWindow(QWidget):
         c_row.addWidget(self.c_value_label)
         self.c_slider.valueChanged.connect(lambda v: self.c_value_label.setText(f"{v / 10000:.4f}"))
         csgen_box.layout().addLayout(c_row)
+        csgen_box.layout().addSpacing(5)
         
         # generate button
+        gen_btn_row = QHBoxLayout()
+        gen_btn_row.setAlignment(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter)
         gen_btn = QPushButton("Generate")
         gen_btn.clicked.connect(self.on_generate)
         gen_btn.setFixedWidth(80)
-        csgen_box.layout().addWidget(gen_btn)
+        gen_btn_row.addWidget(gen_btn)
+        csgen_box.layout().addLayout(gen_btn_row)
 
         # add the group to main layout
-        layout.addWidget(csgen_group)
+        layout.addWidget(csgen_box)
+        layout.addSpacing(10)
 
         # Blending group
-        blend_group = CollapsibleGroup("Blending Options  ▼")
-        blend_layout = blend_group.content.layout()
-        blend_layout.setContentsMargins(8, 4, 8, 4)
-        blend_layout.setSpacing(6)
+        #blend_group = CollapsibleGroup("Blending Options  ▼")
+        #blend_layout = blend_group.content.layout()
+        #blend_layout.setContentsMargins(8, 4, 8, 4)
+        #blend_layout.setSpacing(6)
 
         # create a box for the components
-        blend_box = QGroupBox()
+        blend_box = QGroupBox(" Blending Options ")
         blend_box.setLayout(QVBoxLayout())
-        blend_group.content.layout().addWidget(blend_box)
+        #blend_group.content.layout().addWidget(blend_box)
 
         # q strength slider (determines Ha contribution to final image)
         q_row = QHBoxLayout()
@@ -294,8 +300,7 @@ class SirilCSWindow(QWidget):
         q_row.addWidget(self.q_value_label)
         self.q_slider.valueChanged.connect(lambda v: self.q_value_label.setText(f"{v / 100:.2f}"))
         blend_box.layout().addLayout(q_row)
-
-        blend_box.layout().addSpacing(6)  # fudge for spacing
+        blend_box.layout().addSpacing(6)
 
         # ui constants
         COLOR_LABEL_WIDTH = 35
@@ -348,16 +353,18 @@ class SirilCSWindow(QWidget):
         blu_slider_row.addWidget(self.blu_value_label)
         self.blu_slider.valueChanged.connect(lambda v: self.blu_value_label.setText(f"{v}%"))
         blend_box.layout().addLayout(blu_slider_row)
-
-        blend_box.layout().addSpacing(15)  # fudge for spacing
+        blend_box.layout().addSpacing(5)
 
         # Blend button
+        blend_btn_row = QHBoxLayout()
+        blend_btn_row.setAlignment(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter)
         blend_btn = QPushButton("Blend")
         blend_btn.clicked.connect(self.on_blend)
         blend_btn.setFixedWidth(80)
-        blend_box.layout().addWidget(blend_btn)
+        blend_btn_row.addWidget(blend_btn)
+        blend_box.layout().addLayout(blend_btn_row)
 
-        layout.addWidget(blend_group)
+        layout.addWidget(blend_box)
 
     def add_file_row(self, label_text, lineedit, label_width):
         """ Helper to create a file selection row """

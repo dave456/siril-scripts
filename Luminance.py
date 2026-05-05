@@ -70,9 +70,9 @@ class LuminanceWindow(QWidget):
 
         # Signal bridge for thread callbacks
         self.signals = SignalBridge()
-        self.signals.extraction_complete.connect(self.on_extraction_complete)
-        self.signals.recombine_complete.connect(self.on_recombine_complete)
-        self.signals.error_occurred.connect(self.on_error)
+        self.signals.extraction_complete.connect(self.OnExtractionComplete)
+        self.signals.recombine_complete.connect(self.OnRecombineComplete)
+        self.signals.error_occurred.connect(self.OnError)
 
         self.luminance_file_path = ""
         self.current_image_filename = ""
@@ -88,13 +88,12 @@ class LuminanceWindow(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        # Create group box for luminance controls
         lum_box = QGroupBox(" Luminance ")
         lum_layout = QVBoxLayout()
         lum_box.setLayout(lum_layout)
         lum_box.setContentsMargins(10, 25, 10, 15)
 
-        # Row 1: File selection
+        # file selection
         file_row = QHBoxLayout()
         file_row.setSpacing(6)
 
@@ -109,27 +108,31 @@ class LuminanceWindow(QWidget):
         lum_layout.addLayout(file_row)
         lum_layout.addSpacing(10)
 
-        # Row 2: Extract and Recombine buttons (centered)
+        # buttons
         button_row = QHBoxLayout()
         button_row.addStretch()
         
         self.extract_btn = QPushButton("Extract")
         self.extract_btn.clicked.connect(self.OnExtract)
         button_row.addWidget(self.extract_btn)
+        button_row.addSpacing(20)
 
+        self.open_btn = QPushButton("Open Luminance")
+        self.open_btn.setFixedWidth(120)
+        self.open_btn.clicked.connect(self.OnOpenLuminance)
+        button_row.addWidget(self.open_btn)
         button_row.addSpacing(20)
 
         self.recombine_btn = QPushButton("Recombine")
         self.recombine_btn.clicked.connect(self.OnRecombine)
         button_row.addWidget(self.recombine_btn)
-        
         button_row.addStretch()
-        lum_layout.addLayout(button_row)
 
+        lum_layout.addLayout(button_row)
         layout.addWidget(lum_box)
 
     def DetectLuminanceFile(self):
-        """Check if a _luma file exists for the current image"""
+        """Check if a luma file exists for the current image"""
         try:
             curfilename = self.siril.get_image_filename()
             self.current_image_filename = curfilename
@@ -144,8 +147,11 @@ class LuminanceWindow(QWidget):
                 self.luminance_file_path = luma_path
                 self.luminance_line.setText(luma_basename)
                 self.recombine_btn.setEnabled(True)
+                self.open_btn.setEnabled(True)
             else:
                 self.recombine_btn.setEnabled(False)
+                self.open_btn.setEnabled(False)
+
         except Exception as e:
             self.siril.log(f"Error detecting luminance file: {e}", s.LogColor.SALMON)
             self.recombine_btn.setEnabled(False)
@@ -159,14 +165,20 @@ class LuminanceWindow(QWidget):
             self.luminance_line.setText(os.path.basename(file_path))
             self.luminance_file_path = file_path
             self.recombine_btn.setEnabled(True)
+            self.open_btn.setEnabled(True)
+
+    def OnOpenLuminance(self):
+        if self.luminance_file_path and os.path.exists(self.luminance_file_path):
+            self.siril.cmd("load", os.path.basename(self.luminance_file_path))
+            self.close()
 
     def OnExtract(self):
         """Extract luminance channel from current image"""
         self.extract_btn.setEnabled(False)
         self.recombine_btn.setEnabled(False)
-        threading.Thread(target=self._run_extract, daemon=True).start()
+        threading.Thread(target=self.RunExtract, daemon=True).start()
 
-    def _run_extract(self):
+    def RunExtract(self):
         """Background thread to extract luminance"""
         try:
             self.siril.update_progress("Extracting luminance channel...", 0)
@@ -175,7 +187,7 @@ class LuminanceWindow(QWidget):
                 img_data = self.siril.get_image_pixeldata()
 
             # Extract luminance from the image
-            luminance = extract_luminance(img_data)
+            luminance = ExtractLuminance(img_data)
 
             # Generate output filename
             basename = os.path.basename(self.current_image_filename)
@@ -200,7 +212,7 @@ class LuminanceWindow(QWidget):
         finally:
             self.siril.reset_progress()
     
-    def on_extraction_complete(self, status, filename):
+    def OnExtractionComplete(self, status, filename):
         """Handle extraction completion in main thread"""
         self.luminance_line.setText(filename)
         self.recombine_btn.setEnabled(True)
@@ -214,9 +226,9 @@ class LuminanceWindow(QWidget):
 
         self.extract_btn.setEnabled(False)
         self.recombine_btn.setEnabled(False)
-        threading.Thread(target=self._run_recombine, daemon=True).start()
+        threading.Thread(target=self.RunRecombine, daemon=True).start()
 
-    def _run_recombine(self):
+    def RunRecombine(self):
         """Background thread to recombine luminance"""
         try:
             self.siril.update_progress("Loading luminance channel...", 0)
@@ -233,7 +245,7 @@ class LuminanceWindow(QWidget):
                 self.siril.undo_save_state("Recombine luminance")
 
                 # Recombine luminance with current image
-                result = recombine_luminance(img_data, lum_data)
+                result = RecombineLuminance(img_data, lum_data)
 
                 self.siril.set_image_pixeldata(result)
 
@@ -246,12 +258,11 @@ class LuminanceWindow(QWidget):
         finally:
             self.siril.reset_progress()
 
-    def on_recombine_complete(self, status):
+    def OnRecombineComplete(self, status):
         """Handle recombine completion in main thread"""
-        self.extract_btn.setEnabled(True)
-        self.recombine_btn.setEnabled(self.luminance_file_path != "")
+        self.close()
 
-    def on_error(self, error_msg):
+    def OnError(self, error_msg):
         """Handle error in main thread"""
         QMessageBox.critical(self, "Error", error_msg)
         self.extract_btn.setEnabled(True)
@@ -263,7 +274,7 @@ class LuminanceWindow(QWidget):
         super().closeEvent(event)
 
 
-def extract_luminance(image: np.ndarray) -> np.ndarray:
+def ExtractLuminance(image: np.ndarray) -> np.ndarray:
     """
     Extract the luminance (L) channel from an image.
 
@@ -302,7 +313,7 @@ def extract_luminance(image: np.ndarray) -> np.ndarray:
         return L / 255.0  # normalize to [0, 1] for storage
 
 
-def recombine_luminance(image: np.ndarray, luminance: np.ndarray) -> np.ndarray:
+def RecombineLuminance(image: np.ndarray, luminance: np.ndarray) -> np.ndarray:
     """
     Recombine an image with a new luminance channel.
 

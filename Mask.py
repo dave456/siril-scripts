@@ -123,6 +123,7 @@ class MaskWindow(QWidget):
 
     def OnSelectMask(self):
         """Open file dialog to select mask file"""
+        # prefer tiff because that's what I use for masking
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             "Select mask file", 
@@ -157,9 +158,8 @@ class MaskWindow(QWidget):
         """Handle progress update in main thread"""
         self.siril.update_progress(message, progress)
 
-
     def closeEvent(self, event):
-        """Clean up on close"""
+        """Method cverrride for our custom cleanup"""
         self.siril.disconnect()
         super().closeEvent(event)
 
@@ -194,7 +194,6 @@ class MaskWindow(QWidget):
                     return
 
                 # Apply mask blend operation
-                # output = current * mask + previous * (1 - mask)
                 result = ApplyMask(current_data, previous_data, mask_data)
 
                 self.signals.progress_update.emit("Setting result image...", 0.8)
@@ -248,11 +247,12 @@ class MaskWindow(QWidget):
 
                     mask = np.array(mask)
                     mask = np.squeeze(mask)
+                    # TODO: This is a hack, maybe extract luminance or something??
                     if mask.ndim == 3:
                         mask = mask[0]
 
-                    original_dtype = mask.dtype
                     # Normalize to [0, 1], handling special values first.
+                    original_dtype = mask.dtype
                     mask = np.nan_to_num(mask, nan=0.0, posinf=1.0, neginf=0.0)
                     mask = NormalizeMask(mask, original_dtype)
 
@@ -268,13 +268,16 @@ class MaskWindow(QWidget):
 
 def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarray:
     """Normalize mask values to [0, 1] while preserving bright=1 semantics."""
+    # ugh - a lot of gunk in here. We handle multiple tiff bit depths. We basically
+    # need to ensure that we get a normalized float32 in [0..1]. We also nuke nan-data.
+    # This should never happen, but paranoia and all that.
     mask_array = mask_array.astype(np.float32)
-
     if original_dtype == np.uint8:
         mask_array = mask_array / 255.0
     elif original_dtype == np.uint16:
         mask_array = mask_array / 65535.0
     else:
+        # assumes 32bit flaot
         mask_min = np.nanmin(mask_array)
         mask_max = np.nanmax(mask_array)
         if mask_max > mask_min:
@@ -283,6 +286,7 @@ def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarra
             mask_array = np.zeros_like(mask_array, dtype=np.float32)
 
     return np.clip(mask_array, 0.0, 1.0).astype(np.float32)
+
 
 def ApplyMask(current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """
@@ -309,7 +313,7 @@ def ApplyMask(current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np
     # Handle both planes-first (C, H, W) and 2D (H, W) formats
     if current.ndim == 3:
         # Planes-first: expand mask to match channels dimension
-        # mask is (H, W), expand to (1, H, W) then broadcast
+        # mask is (H, W), expand to (1, H, W)
         mask_expanded = mask[np.newaxis, :, :]
 
         # invert mask for previous image

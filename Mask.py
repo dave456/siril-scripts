@@ -24,7 +24,7 @@ import numpy as np
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QFileDialog, QMessageBox, QGroupBox
+    QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from astropy.io import fits
@@ -90,7 +90,7 @@ class MaskWindow(QWidget):
         mask_box = QGroupBox(" Mask ")
         mask_layout = QVBoxLayout()
         mask_box.setLayout(mask_layout)
-        mask_box.setContentsMargins(10, 25, 10, 15)
+        mask_box.setContentsMargins(8, 20, 10, 10)
 
         # Mask file selection
         file_row = QHBoxLayout()
@@ -103,8 +103,12 @@ class MaskWindow(QWidget):
         self.mask_line = QLineEdit()
         self.mask_line.setReadOnly(True)
         file_row.addWidget(self.mask_line, 1)
-
         mask_layout.addLayout(file_row)
+        mask_layout.addSpacing(10)
+
+        self.invert_checkbox = QCheckBox("Invert mask")
+        mask_layout.addWidget(self.invert_checkbox)
+
         layout.addWidget(mask_box)
         layout.addSpacing(10)
 
@@ -194,7 +198,7 @@ class MaskWindow(QWidget):
                     return
 
                 # Apply mask blend operation
-                result = ApplyMask(current_data, previous_data, mask_data)
+                result = self.ApplyMask(current_data, previous_data, mask_data)
 
                 self.signals.progress_update.emit("Setting result image...", 0.8)
 
@@ -264,6 +268,45 @@ class MaskWindow(QWidget):
         except Exception as e:
             self.siril.log(f"Error loading mask file: {e}", s.LogColor.SALMON)
             return None
+        
+
+    def ApplyMask(self, current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """
+        Blend the current and previous images together using the mask.
+        
+        Parameters
+        ----------
+        current : float32 numpy array
+            Current image data in Siril planes-first layout: (channels, height, width) or (height, width)
+        previous : float32 numpy array
+            Previous image data (from undo) in same layout
+        mask : float32 numpy array
+            Mask data in range [0, 1], shape (height, width)
+        
+        Returns
+        -------
+        float32 numpy array
+            Blended result in same layout as input
+        """
+        current = current.astype(np.float32)
+        previous = previous.astype(np.float32)
+        mask = mask.astype(np.float32)
+        
+        # Handle both planes-first (C, H, W) and 2D (H, W) formats
+        if current.ndim == 3:
+            # Planes-first: expand mask to match channels dimension
+            # mask is (H, W), expand to (1, H, W)
+            mask_expanded = mask[np.newaxis, :, :]
+            if self.invert_checkbox.isChecked():
+                mask_expanded = 1.0 - mask_expanded
+            result = current * mask_expanded + previous * (1 - mask_expanded)
+        else:
+            # 2D case
+            if self.invert_checkbox.isChecked():
+                mask = 1.0 - mask
+            result = current * mask + previous * (1 - mask)
+        
+        return result.astype(np.float32)
 
 
 def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarray:
@@ -288,41 +331,7 @@ def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarra
     return np.clip(mask_array, 0.0, 1.0).astype(np.float32)
 
 
-def ApplyMask(current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """
-    Apply mask operation: output = current * mask + previous * (1 - mask)
-    
-    Parameters
-    ----------
-    current : float32 numpy array
-        Current image data in Siril planes-first layout: (channels, height, width) or (height, width)
-    previous : float32 numpy array
-        Previous image data (from undo) in same layout
-    mask : float32 numpy array
-        Mask data in range [0, 1], shape (height, width)
-    
-    Returns
-    -------
-    float32 numpy array
-        Blended result in same layout as input
-    """
-    current = current.astype(np.float32)
-    previous = previous.astype(np.float32)
-    mask = mask.astype(np.float32)
-    
-    # Handle both planes-first (C, H, W) and 2D (H, W) formats
-    if current.ndim == 3:
-        # Planes-first: expand mask to match channels dimension
-        # mask is (H, W), expand to (1, H, W)
-        mask_expanded = mask[np.newaxis, :, :]
 
-        # invert mask for previous image
-        result = previous * mask_expanded + current * (1 - mask_expanded)
-    else:
-        # 2D case
-        result = previous * mask + current * (1 - mask)
-    
-    return result.astype(np.float32)
 
 
 def main():

@@ -175,6 +175,7 @@ class LuminanceWindow(QWidget):
     def OnExtract(self):
         """Extract luminance channel from current image"""
         self.extract_btn.setEnabled(False)
+        self.open_btn.setEnabled(False)
         self.recombine_btn.setEnabled(False)
         threading.Thread(target=self.RunExtract, daemon=True).start()
 
@@ -215,8 +216,9 @@ class LuminanceWindow(QWidget):
     def OnExtractionComplete(self, status, filename):
         """Handle extraction completion in main thread"""
         self.luminance_line.setText(filename)
-        self.recombine_btn.setEnabled(True)
         self.extract_btn.setEnabled(True)
+        self.open_btn.setEnabled(True)
+        self.recombine_btn.setEnabled(True)
 
     def OnRecombine(self):
         """Recombine current image with extracted luminance"""

@@ -11,6 +11,7 @@ The pre-processing scripts assume master darks and master flats have already bee
 | CC_Sharpen.py | GUI front-end script for Cosmic Clarity sharpening. Simplifies existing UI and adds pre-stretch for linear data. |
 | CLAHE.py | Contrast local adaptive histogram equalization with simple luma masking (light and dark) as well as strength. |
 | ContinuumSubtraction.py | Continuum subtraction script for narrowband processing. |
+| Copy_Header.py | Copies FITS headers from one file to another. Useful when creating new images from pixelmath, etc. |
 | Darks.ssf | Create darks |
 | Drizzle.ssf | Stack using drizzle and my preferred settings (deprecated see Stacking.py) |
 | Flats.ssh | Create flats using computed bias based on offset derived from Sony 183 sensor |

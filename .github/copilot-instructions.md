@@ -16,6 +16,13 @@ Before implementing:
 - If multiple interpretations exist, present them instead of picking silently.
 - If a simpler solution exists, say so.
 - If requirements are unclear, stop and ask a clarifying question.
+- Deduplicate obvious repetition before finalizing:
+    - If two or more callbacks/functions differ only by target widget, field name, or constant argument, merge into one parameterized helper.
+    - Prefer passing context (attribute name, widget reference, enum/value) instead of creating one-off wrapper handlers.
+- Mandatory self-review pass before returning code:
+    - Scan for near-identical methods created during incremental implementation.
+    - Collapse duplicates unless separation is required for clarity, threading, or future behavior divergence.
+    - If duplicates are intentionally kept, state the reason explicitly.
 
 ## Simplicity First
 

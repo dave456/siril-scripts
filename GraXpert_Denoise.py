@@ -12,7 +12,6 @@ s.ensure_installed("numpy")
 
 import os
 import sys
-import asyncio
 import subprocess
 import threading
 from astropy.io import fits
@@ -22,7 +21,7 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGroupBox, QSlider, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
 graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
 
@@ -47,7 +46,12 @@ class SirilDenoiseInterface(QWidget):
             self.close()
             return
 
-        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
+        self.progress = 0.0
+        self.progress_timer = QTimer(self)
+        self.progress_timer.setInterval(1000)
+        self.progress_timer.timeout.connect(self.UpdateProgress)
+
+        self._enable_apply.connect(self.OnThreadComplete)
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -94,9 +98,11 @@ class SirilDenoiseInterface(QWidget):
             QMessageBox.critical(self, "Error", "No image loaded")
             return
         self.apply_btn.setEnabled(False)
-        threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
+        self.progress = 0.0
+        self.progress_timer.start()
+        threading.Thread(target=self.ApplyChanges, daemon=True).start()
 
-    async def ApplyChanges(self):
+    def ApplyChanges(self):
         """Run GraXpert denoise in a background thread and load the result into Siril."""
         input_file = ""
         output_file = ""
@@ -130,7 +136,6 @@ class SirilDenoiseInterface(QWidget):
                 # run graxpert
                 self.siril.log("AI model: latest", s.LogColor.BLUE)
                 self.siril.log(f"Strength: {denoise_strength:.2f}", s.LogColor.BLUE)
-                self.siril.update_progress("GraXpert denoise running...", 0)
                 subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
 
                 # load image back into Siril
@@ -155,9 +160,21 @@ class SirilDenoiseInterface(QWidget):
                 os.remove(input_file)
             if output_file and os.path.exists(output_file):
                 os.remove(output_file)
-
             self._enable_apply.emit()
             self.siril.reset_progress()
+
+    def UpdateProgress(self):
+        """Simulate progress updates while the background processing is running."""
+        if self.apply_btn.isEnabled():
+            return
+        self.siril.update_progress("GraXpert denoise running...", self.progress)
+        if self.progress <= 0.98:
+            self.progress = self.progress + 0.01
+
+    def OnThreadComplete(self):
+        """Re-enable the apply button after processing is complete."""
+        self.progress_timer.stop()
+        self.apply_btn.setEnabled(True)
 
 def main():
     try:

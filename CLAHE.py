@@ -373,11 +373,8 @@ def basic_clahe(image: np.ndarray, strength: float = 0.5, clip_limit: float = 2.
     highlight_threshold = highlight_level / 100.0
     highlight_half_width = max(0.01, highlight_threshold * 0.1)
 
-    # ---- normalize to [0, 1] float32 ----
+    # ---- convert to float32 ----
     img = image.astype(np.float32)
-    img_min, img_max = img.min(), img.max()
-    if img_max > img_min:
-        img = (img - img_min) / (img_max - img_min)
 
     clahe = cv2.createCLAHE(clipLimit=float(clip_limit), tileGridSize=(tile_size, tile_size))
 

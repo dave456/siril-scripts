@@ -84,6 +84,19 @@ class StackingInterface(QWidget):
         self.pixfrac_spin.setEnabled(False)
         drizzle_layout.addRow("Pixel Fraction:", self.pixfrac_spin)
 
+        self.drizzle_method = QComboBox()
+        self.drizzle_method.addItems([
+            "Square", 
+            "Gaussian", 
+            "Point",
+            "Turbo",
+            "Lanczos2",
+            "Lanczos3",
+        ])
+        self.drizzle_method.setCurrentText("Square")
+        self.drizzle_method.setEnabled(False)
+        drizzle_layout.addRow("Kernel:", self.drizzle_method)
+
         layout.addWidget(drizzle_box)
         self.drizzle_radio.toggled.connect(self.OnDrizzleToggled)
 
@@ -231,6 +244,7 @@ class StackingInterface(QWidget):
         """toggle the spin boxes for drizzle on/off settings"""
         self.scale_spin.setEnabled(checked)
         self.pixfrac_spin.setEnabled(checked)
+        self.drizzle_method.setEnabled(checked)
 
     def OnRejectionMethodChanged(self, method):
         """update labels for spin boxes based on rejection method"""
@@ -311,6 +325,7 @@ class StackingInterface(QWidget):
         use_drizzle = self.drizzle_radio.isChecked()
         scale = self.scale_spin.value()
         pixfrac = self.pixfrac_spin.value()
+        kernel = self.drizzle_method.currentText().lower()
         method = f"Drizzle ({scale:.1f}x)" if use_drizzle else "Interpolation (Lanczos4)"
 
         try:
@@ -409,7 +424,7 @@ class StackingInterface(QWidget):
             # register all the calibrated subs
             if not os.path.isfile(f"./process/r_{stack_prefix}_.seq"):
                 if use_drizzle:
-                    self.siril.cmd("register", stack_prefix, "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", "-kernel=square")
+                    self.siril.cmd("register", stack_prefix, "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", f"-kernel={kernel}")
                 else:
                     self.siril.cmd("register", stack_prefix, "-interp=lanczos4")
             else:
@@ -495,6 +510,7 @@ class StackingInterface(QWidget):
             self.siril.log(f"Unhandled exception in ExecuteStacking(): {str(e)}", s.LogColor.SALMON)
 
         finally:
+            self.siril.reset_progress()
             self._enable_apply.emit()
 
 

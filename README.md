@@ -26,3 +26,4 @@ The pre-processing scripts assume master darks and master flats have already bee
 | Pedestal.py | Simple pedestal remover. Useful when input image normalization increases min values. Must be run before color calibration. |
 | Stacking.py | Stacks images from single and multiple sessions. Provides simple UI for many stacking options that I use. |
 | Star_Reducer.py | Star reduction script using Bill Blanshans pixelmath expressions (translated to python) |
+| Starnet.py | This script wraps the new Starnet v2.5.1 starnet. The existing starnet is built into Siril |

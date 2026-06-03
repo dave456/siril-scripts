@@ -29,6 +29,7 @@ graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
 
 class SirilBGEInterface(QWidget):
     _enable_apply = pyqtSignal()
+    _close_requested = pyqtSignal()
 
     def __init__(self):
         """Constructor for the GraXpert BGE UI."""
@@ -48,6 +49,7 @@ class SirilBGEInterface(QWidget):
             return
 
         self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
+        self._close_requested.connect(self.close)
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -68,10 +70,10 @@ class SirilBGEInterface(QWidget):
         self.smoothing_slider = QSlider(Qt.Orientation.Horizontal)
         self.smoothing_slider.setMinimum(0)
         self.smoothing_slider.setMaximum(100)
-        self.smoothing_slider.setValue(40)
+        self.smoothing_slider.setValue(25)
         smoothing_row.addWidget(self.smoothing_slider, 1)
 
-        self.smoothing_value_label = QLabel("0.40")
+        self.smoothing_value_label = QLabel("0.25")
         self.smoothing_value_label.setFixedWidth(35)
         smoothing_row.addWidget(self.smoothing_value_label)
         self.smoothing_slider.valueChanged.connect(
@@ -100,6 +102,7 @@ class SirilBGEInterface(QWidget):
         """Run GraXpert BGE in a background thread and load the result into Siril."""
         input_file = ""
         output_file = ""
+        success = False
         try:
             # Claim the processing thread
             with self.siril.image_lock():
@@ -153,6 +156,7 @@ class SirilBGEInterface(QWidget):
 
                 self.siril.update_progress("GraXpert BGE running...", 1)
                 self.siril.log("GraXpert BGE completed.", s.LogColor.GREEN)
+                success = True
 
         except subprocess.CalledProcessError as e:
             self.siril.log(f"Error occurred while running GraXpert: {e}", s.LogColor.SALMON)
@@ -168,6 +172,8 @@ class SirilBGEInterface(QWidget):
 
             self._enable_apply.emit()
             self.siril.reset_progress()
+            if success:
+                self._close_requested.emit()
 
 
 def main():

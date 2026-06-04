@@ -22,7 +22,7 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox,
-    QDoubleSpinBox, QSpinBox
+    QDoubleSpinBox, QSpinBox, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -62,13 +62,37 @@ class SirilCosmicClarityInterface(QWidget):
         mode_box.setLayout(mode_layout)
         mode_box.setContentsMargins(8, 23, 8, 13)
 
-        self.stellar_only_radio = QRadioButton("Stellar Only")
-        self.non_stellar_only_radio = QRadioButton("Non-Stellar Only")
-        self.both_radio = QRadioButton("Both")
-        self.both_radio.setChecked(True)
-        mode_layout.addWidget(self.stellar_only_radio)
-        mode_layout.addWidget(self.non_stellar_only_radio)
-        mode_layout.addWidget(self.both_radio)
+        sharpen_mode_row = QHBoxLayout()
+        sharpen_mode_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        sharpen_mode_label = QLabel("Objects:")
+        sharpen_mode_label.setFixedWidth(80)
+        sharpen_mode_row.addWidget(sharpen_mode_label)
+        self.sharpen_mode = QComboBox()
+        self.sharpen_mode.addItems([
+            "Stellar Only", 
+            "Non-Stellar Only", 
+            "Stellar & Non-Stellar",
+        ])
+        self.sharpen_mode.setCurrentIndex(2)  # default to "Both"
+        self.sharpen_mode.setFixedWidth(150)
+        sharpen_mode_row.addWidget(self.sharpen_mode, 1)
+        mode_layout.addLayout(sharpen_mode_row)
+
+        correction_mode_row = QHBoxLayout()
+        correction_mode_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        correction_mode_label = QLabel("Aberrations:")
+        correction_mode_label.setFixedWidth(80)
+        correction_mode_row.addWidget(correction_mode_label)
+        self.correction_mode = QComboBox()
+        self.correction_mode.addItems([
+            "Sharpen Only",
+            "Correct Only",
+            "Correct & Sharpen",
+        ])
+        self.correction_mode.setCurrentIndex(0)  # default to "Sharpen Only"
+        self.correction_mode.setFixedWidth(150)
+        correction_mode_row.addWidget(self.correction_mode, 1)
+        mode_layout.addLayout(correction_mode_row)
         layout.addWidget(mode_box)
 
         # Sharpening strength group box
@@ -216,13 +240,23 @@ class SirilCosmicClarityInterface(QWidget):
         button_row.addWidget(self.apply_btn)
         layout.addLayout(button_row)
 
-    def _sharpening_mode(self):
+    def sharpeningMode(self):
         """Return the currently selected sharpening mode string."""
-        if self.stellar_only_radio.isChecked():
+        if self.sharpen_mode.currentIndex() == 0:
             return "Stellar Only"
-        if self.non_stellar_only_radio.isChecked():
+        elif self.sharpen_mode.currentIndex() == 1:
             return "Non-Stellar Only"
-        return "Both"
+        elif self.sharpen_mode.currentIndex() == 2:
+            return "Both"
+        
+    def correctionMode(self):
+        """Return the currently selected aberration correction mode string."""
+        if self.correction_mode.currentIndex() == 0:
+            return "sharpen_only"
+        elif self.correction_mode.currentIndex() == 1:
+            return "correct_only"
+        elif self.correction_mode.currentIndex() == 2:
+            return "correct_sharpen"
 
     def OnApply(self):
         """Handle apply button click."""
@@ -237,7 +271,8 @@ class SirilCosmicClarityInterface(QWidget):
         try:
             # setiastro sharpen doesn't like it if you don't pass in all the arguments, 
             # even if you don't use them, e.g. PSF strength
-            mode = self._sharpening_mode()
+            sharpenMode = self.sharpeningMode()
+            correctionMode = self.correctionMode()
             stellar_str = f"{self.stellar_str_slider.value() / 100:.2f}"
             non_stellar_str = f"{self.non_stellar_str_slider.value() / 100:.2f}"
             non_stellar_psf = f"{self.non_stellar_psf_slider.value() / 10:.1f}"
@@ -248,10 +283,11 @@ class SirilCosmicClarityInterface(QWidget):
                 "sharpen",
                 f"-i={inputFile}",
                 f"-o={outputFile}",
-                f"--sharpening-mode={mode}",
+                f"--sharpening-mode={sharpenMode}",
                 f"--stellar-amount={stellar_str}",
                 f"--nonstellar-amount={non_stellar_str}",
                 f"--nonstellar-psf={non_stellar_psf}",
+                f"--stellar-correct-mode={correctionMode}",
                 f"--chunk-size={self.chunk_size_spin.value()}",
                 f"--overlap={self.overlap_spin.value()}",
             ]
@@ -265,7 +301,8 @@ class SirilCosmicClarityInterface(QWidget):
             if self.use_auto_psf_check.isChecked():
                 command.append("--auto-psf")
 
-            self.siril.log(f"Sharpening mode: {mode}", s.LogColor.BLUE)
+            self.siril.log(f"Sharpening mode: {sharpenMode}", s.LogColor.BLUE)
+            self.siril.log(f"Correction mode: {correctionMode}", s.LogColor.BLUE)
             self.siril.log(f"Stellar sharpening: {stellar_str}", s.LogColor.BLUE)
             self.siril.log(f"Non-stellar sharpening: {non_stellar_str}", s.LogColor.BLUE)
             if self.use_auto_psf_check.isChecked():
@@ -348,7 +385,7 @@ class SirilCosmicClarityInterface(QWidget):
                         if pre_stretch:
                             inv_m = 1.0 - m
                             data = mtf(inv_m, data)
-                        mode = self._sharpening_mode()
+                        mode = self.sharpeningMode()
                         save_state = f"CC: '{mode}', "
                         if mode in ("Stellar Only", "Both"):
                             save_state += f"stellar={self.stellar_str_slider.value() / 100:.2f}, "

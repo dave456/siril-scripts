@@ -15,8 +15,7 @@ The pre-processing scripts assume master darks and master flats have already bee
 | Darks.ssf | Create darks |
 | Drizzle.ssf | Stack using drizzle and my preferred settings (deprecated see Stacking.py) |
 | Flats.ssh | Create flats using computed bias based on offset derived from Sony 183 sensor |
-| GraXpert_BGE.py | GUI front-end script for GraXpert background extraction. Simplified UI |
-| GraXpert_Denoise.py | GUI script for GraXpert denoising. Simplfied UI |
+| GraXpert.py | GUI front-end script for GraXpert background extraction and denoise. Simplified UI |
 | Ha_OII_Extract.ssf | Extraction and stacking for OSC cameras using dual-band filters. |
 | Histogram.py | Histogram utility that creates a nice histogram for current image. Provides small button that can be left running. |
 | Interpolate.ssf | Stack using lancosz4 interpolation (deprecated see Stacking.py)  |

@@ -23,6 +23,7 @@ The pre-processing scripts assume master darks and master flats have already bee
 | Mask.py | Provides masking functionality for siril. Leverages siril undo stack to allow user to provide mask for the most recent operation. Supports 8bit/16bit tiff as well as fits files for masking | 
 | NarrowBandMixer.py | Narrowband channel mixer script for blending colors for Ha/OIII extractions, works on both linear and non-linear data. |
 | Pedestal.py | Simple pedestal remover. Useful when input image normalization increases min values. Must be run before color calibration. |
+| Remove_Banding.py | Provides three different methods to remove banding noise from images. |
 | Stacking.py | Stacks images from single and multiple sessions. Provides simple UI for many stacking options that I use. |
 | Star_Reducer.py | Star reduction script using Bill Blanshans pixelmath expressions (translated to python) |
 | Starnet.py | This script wraps the new Starnet v2.5.1 starnet. The existing starnet is built into Siril |

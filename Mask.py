@@ -15,10 +15,12 @@ s.ensure_installed("PyQt6")
 s.ensure_installed("astropy")
 s.ensure_installed("numpy")
 s.ensure_installed("opencv-python")
+s.ensure_installed("tifffile")
 
 import os
 import sys
 import threading
+import importlib
 import cv2
 import numpy as np
 
@@ -122,6 +124,11 @@ class MaskWindow(QWidget):
         button_row.addWidget(self.mask_btn)
         button_row.addStretch()
 
+        self.help_btn = QPushButton("Help")
+        self.help_btn.clicked.connect(self.ShowHelp)
+        button_row.addWidget(self.help_btn)
+        button_row.addStretch()
+
         layout.addLayout(button_row)
 
 
@@ -139,6 +146,21 @@ class MaskWindow(QWidget):
             self.mask_file_path = file_path
             self.mask_btn.setEnabled(True)
 
+    def ShowHelp(self):
+        """Show help message box"""
+        help_text = (
+            "This utility allows you to apply a mask to blend the current image with the previous state from the undo stack.\n\n"
+            "1. Load an image in Siril and make some adjustments, e.g. denoise, curves, etc.\n"
+            "2. Click 'Select' to choose a mask file (FITS or TIFF format).\n"
+            "3. Optionally invert the mask if desired.\n"
+            "4. Click 'Mask' to apply the blending operation.\n\n"
+            "The result will be a blend of the current and previous images based on the mask, and will be added to the undo stack "
+            "for further adjustments if needed.\n\n"
+            "Note: Plate solved images may be flipped in Siril, resulting in an incorrect orientation of the mask when exported "
+            "as anything other than FITS. If you export as TIFF and edit in another application this orientation information is lost, "
+            "so you may need to experiment with flipping it in an external editor if the result looks wrong."
+        )
+        QMessageBox.information(self, "Help - Image Masking Utility", help_text)
 
     def OnMask(self):
         """Apply masking operation"""
@@ -229,19 +251,7 @@ class MaskWindow(QWidget):
         """
         try:
             if file_path.lower().endswith(('.tif', '.tiff')):
-                mask = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
-                if mask is None:
-                    return None
-
-                # If the TIFF has multiple channels, convert to grayscale mask.
-                if mask.ndim == 3:
-                    if mask.shape[2] == 4:
-                        mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2GRAY)
-                    else:
-                        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-
-                original_dtype = mask.dtype
-                mask = NormalizeMask(mask, original_dtype)
+                mask = self.LoadTiffMask(file_path)
             else:
                 # Assume FITS file
                 with fits.open(file_path) as hdul:
@@ -268,6 +278,122 @@ class MaskWindow(QWidget):
         except Exception as e:
             self.siril.log(f"Error loading mask file: {e}", s.LogColor.SALMON)
             return None
+
+
+    def LoadTiffMask(self, file_path: str) -> np.ndarray:
+        """Load TIFF mask with metadata-aware channel and polarity handling."""
+        # ugh - so this is really complicated due to the ways that applications can save tiff files.
+        # Specifically, photo editing apps (ahem, photoshop) often save masks as RGB or RGBA tiffs, 
+        # where the actual mask data is in the alpha channel, and the RGB channels are just a preview. 
+        # Other apps may save as grayscale, but with photometric metadata that indicates whether white 
+        # or black is the "1" value. We started with imread and we got to here...
+        # The problem is, I really like creating my custom masks in other apps, but this may have gotten
+        # away from me.
+        try:
+            tifffile_module = importlib.import_module("tifffile")
+
+            with tifffile_module.TiffFile(file_path) as tif:
+                if len(tif.pages) == 0:
+                    return None
+
+                # Use the largest page to avoid preview/thumbnail pages.
+                best_page = None
+                best_area = -1
+                for page in tif.pages:
+                    try:
+                        shape = tuple(int(v) for v in page.shape)
+                    except Exception:
+                        continue
+
+                    if len(shape) == 0:
+                        continue
+
+                    if len(shape) == 2:
+                        h, w = shape
+                    elif len(shape) == 3:
+                        if shape[-1] in (1, 2, 3, 4):
+                            h, w = shape[0], shape[1]
+                        elif shape[0] in (1, 2, 3, 4):
+                            h, w = shape[1], shape[2]
+                        else:
+                            h, w = shape[0], shape[1]
+                    else:
+                        h, w = shape[-2], shape[-1]
+
+                    area = int(h) * int(w)
+                    if area > best_area:
+                        best_area = area
+                        best_page = page
+
+                if best_page is None:
+                    return None
+
+                mask = np.array(best_page.asarray())
+                mask = np.squeeze(mask)
+                photometric = str(getattr(best_page, "photometric", "")).upper()
+
+                extrasamples = []
+                try:
+                    extrasamples = [str(v).lower() for v in best_page.extrasamples]
+                except Exception:
+                    extrasamples = []
+
+            if mask.ndim == 3:
+                channel_axis = None
+                if mask.shape[-1] in (1, 2, 3, 4):
+                    channel_axis = -1
+                elif mask.shape[0] in (1, 2, 3, 4):
+                    channel_axis = 0
+
+                if channel_axis is None:
+                    raise ValueError(f"Unsupported TIFF mask shape {mask.shape}")
+
+                mask_channels_last = np.moveaxis(mask, channel_axis, -1)
+                use_alpha = any("alpha" in name for name in extrasamples) and mask_channels_last.shape[-1] >= 2
+
+                if use_alpha:
+                    # Many tools store matte in alpha while RGB channels are for preview.
+                    mask = mask_channels_last[:, :, -1]
+                    self.siril.log("TIFF mask: using alpha channel", s.LogColor.BLUE)
+                elif mask_channels_last.shape[-1] >= 3:
+                    # Convert RGB-like TIFF to grayscale luminance - barf, this is overkill!
+                    rgb = mask_channels_last[:, :, :3].astype(np.float32)
+                    mask = 0.114 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.299 * rgb[:, :, 2]
+                else:
+                    mask = np.mean(mask_channels_last.astype(np.float32), axis=2)
+
+            if mask.ndim != 2:
+                raise ValueError(f"TIFF mask must be 2D after conversion; got shape {mask.shape}")
+
+            original_dtype = mask.dtype
+            mask = np.nan_to_num(mask, nan=0.0, posinf=1.0, neginf=0.0)
+            mask = NormalizeMask(mask, original_dtype)
+
+            # TIFF photometric WhiteIsZero means white pixels are numerically low.
+            if "MINISWHITE" in photometric or photometric.endswith(".0") or photometric == "0":
+                mask = 1.0 - mask
+                self.siril.log("TIFF mask: detected MINISWHITE, auto-inverted", s.LogColor.BLUE)
+
+            return mask.astype(np.float32)
+
+        except Exception as e:
+            self.siril.log(f"TIFF metadata load failed ({e}), falling back to OpenCV", s.LogColor.BLUE)
+
+            # Fallback path for uncommon TIFF variants not decoded by tifffile.
+            mask = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+            if mask is None:
+                return None
+
+            if mask.ndim == 3:
+                if mask.shape[2] == 4:
+                    mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2GRAY)
+                else:
+                    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+            original_dtype = mask.dtype
+            mask = np.nan_to_num(mask, nan=0.0, posinf=1.0, neginf=0.0)
+            mask = NormalizeMask(mask, original_dtype)
+            return mask.astype(np.float32)
         
 
     def ApplyMask(self, current: np.ndarray, previous: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -329,9 +455,6 @@ def NormalizeMask(mask_array: np.ndarray, original_dtype: np.dtype) -> np.ndarra
             mask_array = np.zeros_like(mask_array, dtype=np.float32)
 
     return np.clip(mask_array, 0.0, 1.0).astype(np.float32)
-
-
-
 
 
 def main():

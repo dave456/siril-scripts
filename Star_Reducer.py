@@ -204,14 +204,23 @@ class StarReducerWindow(QWidget):
              self.starless_path_edit.setText(starless_basename)
              self.starless_info.setText("  Starless image detected.")
         else:
-            self.starless_info.setText("  No starless image detected. One will be generated automatically.")
+            self.starless_info.setText("  No starless image detected.")
 
     def GenerateStarless(self):
+        """ Generates a starmask using starnet"""
+        # This seemed like a really good idea at the time. Currently disabled.
         if self.starless_file_path != "" and os.path.exists(self.starless_file_path):
             return True
-        else:    
+        else:
             box = QMessageBox()
-            box.setIcon(QMessageBox.Icon.Information)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("No starless image detected")
+            box.setText("No starless image detected. You must generate and/or select a starless image.")
+            box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            result = box.exec()
+            return False
+
             box.setWindowTitle("Confirm creation of starless image")
             box.setText("No starless image detected.\n\nThe current image will be saved, "
                         "and a starless image will be generated using Siril's Starnet algorithm.\n\n"

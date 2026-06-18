@@ -421,12 +421,13 @@ class StackingInterface(QWidget):
 
                 stack_prefix = "pp_merge"
 
-            # register all the calibrated subs
+            # use a 2-pass algorithm for registration
             if not os.path.isfile(f"./process/r_{stack_prefix}_.seq"):
+                self.siril.cmd("register", stack_prefix, "-2pass")
                 if use_drizzle:
-                    self.siril.cmd("register", stack_prefix, "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", f"-kernel={kernel}")
+                    self.siril.cmd("seqapplyreg", stack_prefix, "-framing=min", "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", f"-kernel={kernel}")
                 else:
-                    self.siril.cmd("register", stack_prefix, "-interp=lanczos4")
+                    self.siril.cmd("seqapplyreg", stack_prefix, "-framing=min", "-interp=lanczos4")
             else:
                 self.siril.log("Registered sequence found, skipping registration.", s.LogColor.BLUE)
                 

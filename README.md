@@ -13,6 +13,7 @@ The pre-processing scripts assume master darks and master flats have already bee
 | ContinuumSubtraction.py | Continuum subtraction script for narrowband processing. |
 | Copy_Header.py | Copies FITS headers from one file to another. Useful when creating new images from pixelmath, etc. |
 | Darks.ssf | Create darks |
+| DB_Extract.py | Dual band extraction and stacking for OSC cameras |
 | Flats.ssh | Create flats using computed bias based on offset derived from Sony 183 sensor |
 | GraXpert.py | GUI front-end script for GraXpert background extraction and denoise. Simplified UI |
 | Ha_OII_Extract.ssf | Extraction and stacking for OSC cameras using dual-band filters. |

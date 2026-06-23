@@ -26,7 +26,7 @@ base_path = "."
 
 
 class StackingInterface(QWidget):
-    _enable_apply = pyqtSignal()
+    threadComplete = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -42,7 +42,7 @@ class StackingInterface(QWidget):
             self.close()
             return
 
-        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
+        self.threadComplete.connect(self.OnThreadComplete)
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -302,6 +302,7 @@ class StackingInterface(QWidget):
 
         self.help_btn = QPushButton("Help")
         self.help_btn.setFixedWidth(80)
+        self.help_btn.clicked.connect(self.OnHelp)
         button_row.addWidget(self.help_btn)
         layout.addLayout(button_row)
 
@@ -309,6 +310,11 @@ class StackingInterface(QWidget):
         spacer = QWidget()
         spacer.setFixedHeight(spacing)
         layout.addWidget(spacer)
+
+    def OnThreadComplete(self):
+        """re-enable buttons when the stacking thread completes"""
+        self.apply_btn.setEnabled(True)
+        self.clean_btn.setEnabled(True)
 
     def OnHaDrizzleToggled(self, checked):
         """toggle the spin boxes for Ha drizzle on/off settings"""
@@ -347,6 +353,7 @@ class StackingInterface(QWidget):
     def OnStack(self):
         """start the stacking process in a separate thread"""
         self.apply_btn.setEnabled(False)
+        self.clean_btn.setEnabled(False)
         threading.Thread(target=self.ExecuteStacking, daemon=True).start()
 
     def OnClean(self):
@@ -391,6 +398,20 @@ class StackingInterface(QWidget):
             self.siril.log(f"Cleaned {count} process director{'y' if count == 1 else 'ies'}.", s.LogColor.GREEN)
         except Exception as e:
             self.siril.log(f"Error cleaning process directories: {str(e)}", s.LogColor.SALMON)
+
+    def OnHelp(self):
+        QMessageBox.information(self, "Dual Band Extraction Help", 
+            "This tool extracts the Ha and OIII channels from an OSC image captured\n"
+            "using a dual bandpass filter.\n\n"
+            "Note: After extraction, the Ha data will be half the size of the OIII data.\n\n"
+            
+            "If interpolation is selected for Ha, the data will be resampled (2x) to match\n"
+            "the OIII image size. If drizzle is selected, the scale is fixed at 2.0 so the\n"
+            "final image sizes will match.\n\n"
+
+            "If drizzle is selected for OIII, the scale can be adjusted as desired,\n" \
+            "but the OIII channel may be resampled down to match the Ha\n"
+            "image size depending upon the scale value selected.\n")
 
     def ExecuteStacking(self):
         try:
@@ -619,7 +640,7 @@ class StackingInterface(QWidget):
 
         finally:
             self.siril.reset_progress()
-            self._enable_apply.emit()
+            self.threadComplete.emit()
 
 def main():
     try:

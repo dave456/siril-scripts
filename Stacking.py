@@ -24,9 +24,42 @@ from PyQt6.QtCore import Qt, pyqtSignal
 prefix = "session"
 base_path = "."
 
+class ProcessingException(Exception):
+    """Custom exception for processing errors."""
+    pass
 
 class StackingInterface(QWidget):
-    _enable_apply = pyqtSignal()
+    # thread complete signal
+    threadComplete = pyqtSignal()
+
+    # dict for rejection methods
+    rejectionMethods = {
+        "None": "n",
+        "Percentile Clipping": "p",
+        "Sigma Clipping": "s",
+        "MAD Clipping": "mad",
+        "Median Sigma Clipping": "m",
+        "Linear Fit Clipping": "l",
+        "Winsorized Sigma Clipping": "w",
+        "GESDT Clipping": "g",
+    }
+
+    # dict for weighting methods
+    weightingMethods = {
+        "None": "None",
+        "Number of stars": "-weight=nbstars",
+        "Noise": "-weight=noise",
+        "Weighted FWHM": "-weight=wfwhm",
+    }
+
+    # dict for normalization methods
+    normalizationMethods = {
+        "None": "-nonorm",
+        "Additive": "-norm=add",
+        "Multiplicative": "-norm=mul",
+        "Additive Scaling": "-norm=addscale",
+        "Multiplicative Scaling": "-norm=mulscale",
+    }
 
     def __init__(self):
         super().__init__()
@@ -42,7 +75,7 @@ class StackingInterface(QWidget):
             self.close()
             return
 
-        self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
+        self.threadComplete.connect(self.OnThreadComplete)
         self.CreateWidgets()
 
     def CreateWidgets(self):
@@ -108,16 +141,8 @@ class StackingInterface(QWidget):
 
         # combo box for rejection method selection
         self.rejection_combo = QComboBox()
-        self.rejection_combo.addItems([
-            "None",
-            "Percentile Clipping",
-            "Sigma Clipping",
-            "MAD Clipping",
-            "Median Sigma Clipping",
-            "Linear Fit Clipping",
-            "Winsorized Sigma Clipping",
-            "GESDT Clipping",
-        ])
+        for method in self.rejectionMethods.keys():
+            self.rejection_combo.addItem(method)
         self.rejection_combo.setCurrentText("Winsorized Sigma Clipping")
         self.rejection_combo.setFixedWidth(190)
         self.rejection_combo.currentTextChanged.connect(self.OnRejectionMethodChanged)
@@ -178,12 +203,8 @@ class StackingInterface(QWidget):
         weighting_box.setContentsMargins(8, 23, 8, 13)
 
         self.weighting_combo = QComboBox()
-        self.weighting_combo.addItems([
-            "None",
-            "Number of stars",
-            "Noise",
-            "Weighted FWHM",
-        ])
+        for method in self.weightingMethods.keys():
+            self.weighting_combo.addItem(method)
         self.weighting_combo.setCurrentText("Weighted FWHM")
         weighting_layout.addRow("Method:", self.weighting_combo)
         layout.addWidget(weighting_box)
@@ -206,13 +227,8 @@ class StackingInterface(QWidget):
         input_norm_label.setFixedWidth(150)
         input_norm_row.addWidget(input_norm_label)
         self.input_norm_combo = QComboBox()
-        self.input_norm_combo.addItems([
-            "None",
-            "Additive",
-            "Multiplicative",
-            "Additive Scaling",
-            "Multiplicative Scaling",
-        ])
+        for method in self.normalizationMethods.keys():
+            self.input_norm_combo.addItem(method)
         self.input_norm_combo.setCurrentText("Additive Scaling")
         input_norm_row.addWidget(self.input_norm_combo)
         input_norm_row.addStretch()
@@ -239,6 +255,10 @@ class StackingInterface(QWidget):
         self.clean_btn.clicked.connect(self.OnClean)
         button_row.addWidget(self.clean_btn)
         layout.addLayout(button_row)
+
+    def OnThreadComplete(self):
+        self.apply_btn.setEnabled(True)
+        self.clean_btn.setEnabled(True)
 
     def OnDrizzleToggled(self, checked):
         """toggle the spin boxes for drizzle on/off settings"""
@@ -276,6 +296,7 @@ class StackingInterface(QWidget):
  
     def OnStack(self):
         self.apply_btn.setEnabled(False)
+        self.clean_btn.setEnabled(False)
         threading.Thread(target=self.ExecuteStacking, daemon=True).start()
 
     def OnClean(self):
@@ -321,177 +342,145 @@ class StackingInterface(QWidget):
         except Exception as e:
             self.siril.log(f"Error cleaning process directories: {str(e)}", s.LogColor.SALMON)
 
+    def ProcessLights(self, subdir=".", force=False):
+        """Process lights"""
+        if not os.path.isfile(f"{subdir}/process/light_.seq") or force:
+            if not os.path.isdir(f"{subdir}/lights"):
+                raise ProcessingException("No lights found!")
+            self.siril.log("Converting lights...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "lights")
+            self.siril.cmd("convert", "light", "-out=../process")
+            self.siril.cmd("cd", "..")
+        else:
+            self.siril.log("Lights sequence found - skipping conversion.", s.LogColor.BLUE)
+
+    def ProcessFlats(self, subdir=".", force=False):
+        if not isFitsFile(f"{subdir}/masters", "flat_stacked") or force:
+            if not os.path.isdir(f"{subdir}/flats"):
+                raise ProcessingException("No flats found!")
+            # TODO: Implement flat stacking logic!
+            self.siril.log("Stacking flats... NOT IMPLEMENTED YET", s.LogColor.BLUE)
+        return
+
+    def ProcessDarks(self, subdir=".", force=False):
+        """Process darks"""
+        if not isFitsFile(f"{subdir}/masters", "dark_stacked") or force:
+            if not os.path.isdir(f"{subdir}/darks"):
+                raise ProcessingException("No darks found!")
+            self.siril.log("Stacking darks...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "darks")
+            self.siril.cmd("convert", "dark", "../process")
+        return
+
+    def CalibrateLights(self, use_drizzle, subdir=".", force=False):
+        """Calibrate lights"""
+        if not os.path.isfile(f"{subdir}/process/pp_light_.seq") or force:
+            if not isFitsFile(f"{subdir}/masters", "dark_stacked") or not isFitsFile(f"{subdir}/masters", "flat_stacked"):
+                raise ProcessingException("Calibration master fit files not found!")
+            calibrate_args = [
+                "light",
+                "-dark=../masters/dark_stacked",
+                "-flat=../masters/flat_stacked",
+                "-cc=dark", "-cfa", "-equalize_cfa",
+            ]
+            if not use_drizzle:
+                calibrate_args.append("-debayer")
+            self.siril.log("Calibrating lights...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "process")
+            self.siril.cmd("calibrate", *calibrate_args)
+            self.siril.cmd("cd", "..")
+        else:
+            self.siril.log("Calibrated sequence found - skipping calibration.", s.LogColor.BLUE)
+
     def ExecuteStacking(self):
-        use_drizzle = self.drizzle_radio.isChecked()
-        scale = self.scale_spin.value()
-        pixfrac = self.pixfrac_spin.value()
-        kernel = self.drizzle_method.currentText().lower()
-        method = f"Drizzle ({scale:.1f}x)" if use_drizzle else "Interpolation (Lanczos4)"
-
+        """Main stacking logic, executed in a separate thread to keep the GUI responsive."""
         try:
-            self.siril.log(f"Starting stacking - {method}", s.LogColor.BLUE)
+            self.siril.log("Starting stacking...", s.LogColor.BLUE)
+            use_drizzle = self.drizzle_radio.isChecked()
 
+            # is this necessary?
             if not os.path.exists("process"):
                 os.makedirs("process")
 
+            # collect a list of session directory that match our prefix
             session_dirs = []
-            for entry in sorted(os.listdir(base_path)):
-                full_path = os.path.join(base_path, entry)
-                if os.path.isdir(full_path) and entry.startswith(prefix):
-                    session_dirs.append(entry)
+            for subdir in sorted(os.listdir(base_path)):
+                full_path = os.path.join(base_path, subdir)
+                if os.path.isdir(full_path) and subdir.startswith(prefix):
+                    session_dirs.append(subdir)
 
-            is_single_session = bool(
-                os.path.isdir(os.path.join(base_path, "lights")) and
-                os.path.isdir(os.path.join(base_path, "masters")) and
-                not session_dirs
-            )
-
-            if is_single_session:
-                if not os.path.isfile("./process/light_.seq"):
-                    self.siril.log("Detected single-night folder structure.", s.LogColor.BLUE)
-                    self.siril.cmd("cd", "lights")
-                    self.siril.cmd("convert", "light", "-out=../process")
-                    self.siril.cmd("cd", "../process")
-                else:
-                    self.siril.log("Lights sequence found in process directory, skipping conversion.", s.LogColor.BLUE)
-                    self.siril.cmd("cd", "./process")
-
-                if not os.path.isfile("./process/pp_light_.seq"):
-                    calibrate_args = [
-                        "light",
-                        "-dark=../masters/dark_stacked",
-                        "-flat=../masters/flat_stacked",
-                        "-cc=dark", "-cfa", "-equalize_cfa",
-                    ]
-                    if not use_drizzle:
-                        calibrate_args.append("-debayer")
-                    self.siril.cmd("calibrate", *calibrate_args)
-                else:
-                    self.siril.log("Calibrated sequence found in process directory, skipping calibration.", s.LogColor.BLUE)
-
-                stack_prefix = "pp_light"
+            # kind of hacky logic to determine if this is a single-session or not
+            if os.path.isdir(os.path.join(base_path, "lights")) and not session_dirs:
+                self.ProcessDarks()
+                self.ProcessFlats()
+                self.ProcessLights()
+                self.CalibrateLights(use_drizzle)
             else:
+                # sanity check to just bail if we have nothing
                 if not session_dirs:
-                    self.siril.log(
-                        f"No session directories found with prefix '{prefix}', and no top-level lights/masters structure detected.",
-                        s.LogColor.SALMON,
-                    )
-                    return
-
+                    raise ProcessingException(f"No session directories found with prefix '{prefix}', and no top-level lights/masters structure detected.")
+                
                 self.siril.log("Detected multi-session folder structure.", s.LogColor.BLUE)
+
                 merge_args = []
+                for subdir in session_dirs:
+                    self.siril.log(f"Processing session: {subdir}", s.LogColor.BLUE)
+                    merge_args.append("../" + subdir + "/process/pp_light")
 
-                for entry in session_dirs:
-                    self.siril.log(f"Processing session: {entry}", s.LogColor.BLUE)
-                    merge_args.append("../" + entry + "/process/pp_light")
-
-                    # convert lights for each session
-                    if not os.path.isfile(os.path.join(base_path, entry, "process", "light_.seq")):
-                        self.siril.cmd("cd", os.path.join(entry, "lights"))
-                        self.siril.cmd("convert", "light", "-out=../process")
-                        self.siril.cmd("cd", "../process")
-                    else:
-                        self.siril.log(f"Lights sequence found for session '{entry}', skipping conversion.", s.LogColor.BLUE)
-                        self.siril.cmd("cd", os.path.join(entry, "process"))
-
-                    # calibrate lights for each session
-                    if not os.path.isfile(os.path.join(base_path, entry, "process", "pp_light_.seq")):
-                        calibrate_args = [
-                            "light",
-                            "-dark=../masters/dark_stacked",
-                            "-flat=../masters/flat_stacked",
-                            "-cc=dark", "-cfa", "-equalize_cfa",
-                        ]
-                        if not use_drizzle:
-                            calibrate_args.append("-debayer")
-                        self.siril.cmd("calibrate", *calibrate_args)
-                    else:
-                        self.siril.log(f"Calibrated sequence found for session '{entry}', skipping calibration.", s.LogColor.BLUE)
-
-                    self.siril.cmd("cd", "../..")
+                    self.siril.cmd("cd", f"{subdir}")
+                    self.ProcessDarks(subdir)
+                    self.ProcessFlats(subdir)
+                    self.ProcessLights(subdir)
+                    self.CalibrateLights(use_drizzle, subdir)
+                    self.siril.cmd("cd", "..")
 
                 # merge all of the calibrated session subs into a single sequence for registration and stacking
-                if not os.path.isfile("./process/pp_merge_.seq"):
-                    merge_args.append("pp_merge")
+                if not os.path.isfile("./process/pp_light_.seq"):
+                    merge_args.append("pp_light")
                     self.siril.cmd("cd", "process")
                     self.siril.cmd("merge", *merge_args)
+                    self.siril.cmd("cd", "..")
                 else:
                     self.siril.log("Merged sequence found in process directory, skipping merge.", s.LogColor.BLUE)
-                    self.siril.cmd("cd", "process")
-
-                stack_prefix = "pp_merge"
 
             # use a 2-pass algorithm for registration
-            if not os.path.isfile(f"./process/r_{stack_prefix}_.seq"):
-                self.siril.cmd("register", stack_prefix, "-2pass")
+            if not os.path.isfile(f"./process/r_pp_light_.seq"):
+                self.siril.cmd("cd", "process")
+                self.siril.cmd("register", "pp_light", "-2pass")
                 if use_drizzle:
-                    self.siril.cmd("seqapplyreg", stack_prefix, "-framing=min", "-drizzle", f"-scale={scale:.1f}", f"-pixfrac={pixfrac:.2f}", f"-kernel={kernel}")
+                    self.siril.cmd("seqapplyreg", "pp_light", "-framing=min", "-drizzle", 
+                                   f"-scale={self.scale_spin.value():.1f}", 
+                                   f"-pixfrac={self.pixfrac_spin.value():.2f}", 
+                                   f"-kernel={self.drizzle_method.currentText().lower()}")
                 else:
-                    self.siril.cmd("seqapplyreg", stack_prefix, "-framing=min", "-interp=lanczos4")
+                    self.siril.cmd("seqapplyreg", "pp_light", "-framing=min", "-interp=lanczos4")
             else:
                 self.siril.log("Registered sequence found, skipping registration.", s.LogColor.BLUE)
                 
             # build the stacking command
             stacking_args = [
-                f"r_{stack_prefix}",
+                f"r_pp_light",
                 "rej"
             ]
 
             # pixel rejection method
-            if self.weighting_combo.currentText() == "None":
-                stacking_args.append("n")
-            elif self.rejection_combo.currentText() == "Sigma Clipping":
-                stacking_args.append("s")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "Percentile Clipping":
-                stacking_args.append("p")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "MAD Clipping":
-                stacking_args.append("mad")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "Median Sigma Clipping":
-                stacking_args.append("m")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "Winsorized Sigma Clipping":
-                stacking_args.append("w")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "GESDT Clipping":
-                stacking_args.append("g")
-                stacking_args.append(self.low_spin.value())
-                stacking_args.append(self.high_spin.value())
-            elif self.rejection_combo.currentText() == "Linear Fit Clipping":
-                stacking_args.append("l")
+            selectedMethod = self.rejection_combo.currentText()
+            stacking_args.append(self.rejectionMethods[selectedMethod])
+            if selectedMethod != "None":
                 stacking_args.append(self.low_spin.value())
                 stacking_args.append(self.high_spin.value())
     
             # weighting
-            if self.weighting_combo.currentText() == "Number of stars":
-                stacking_args.append("-weight=nbstars")
-            elif self.weighting_combo.currentText() == "Noise":
-                stacking_args.append("-weight=noise")
-            elif self.weighting_combo.currentText() == "Weighted FWHM":
-                stacking_args.append("-weight=wfwhm")
+            selectedWeighting = self.weighting_combo.currentText()
+            if selectedWeighting != "None":
+                stacking_args.append(self.weightingMethods[selectedWeighting])
 
-            # create rejection maps?
+            # create rejection maps
             if self.create_rejection_maps_checkbox.isChecked():
                 stacking_args.append("-rejmaps")
 
             # input image normalization
-            if self.input_norm_combo.currentText() == "None":
-                stacking_args.append("-nonorm")
-            elif self.input_norm_combo.currentText() == "Additive":
-                stacking_args.append("-norm=add")
-            elif self.input_norm_combo.currentText() == "Multiplicative":
-                stacking_args.append("-norm=mul")
-            elif self.input_norm_combo.currentText() == "Additive Scaling":
-                stacking_args.append("-norm=addscale")
-            elif self.input_norm_combo.currentText() == "Multiplicative Scaling":
-                stacking_args.append("-norm=mulscale")
+            stacking_args.append(self.normalizationMethods[self.input_norm_combo.currentText()])
 
             # output normalization
             if self.output_norm_checkbox.isChecked():
@@ -507,13 +496,23 @@ class StackingInterface(QWidget):
             self.siril.cmd("load", f"{self.outfile_name.text()}")
             self.siril.log("Stacking complete.", s.LogColor.GREEN)
 
+        except ProcessingException as pe:
+            self.siril.log(f"Error in processing: {str(pe)}", s.LogColor.SALMON)
+            self.siril.cmd("cd", "..")  # Ensure we return to the base directory on error
+
         except Exception as e:
             self.siril.log(f"Unhandled exception in ExecuteStacking(): {str(e)}", s.LogColor.SALMON)
+            self.siril.cmd("cd", "..")  # Ensure we return to the base directory on error
 
         finally:
             self.siril.reset_progress()
-            self._enable_apply.emit()
+            self.threadComplete.emit()
 
+def isFitsFile(dirname, basename):
+    return any(
+        os.path.isfile(f"{dirname}/{basename}{ext}")
+        for ext in (".fit", ".fits")
+    )
 
 def main():
     try:
@@ -524,7 +523,6 @@ def main():
     except Exception as e:
         print(f"Error initializing application: {str(e)}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

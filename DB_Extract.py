@@ -305,7 +305,7 @@ class StackingInterface(QWidget):
 
         # apply and clean buttons
         button_row = QHBoxLayout()
-        self.apply_btn = QPushButton("Stack")
+        self.apply_btn = QPushButton("Extract")
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnStack)
         button_row.addWidget(self.apply_btn)
@@ -441,22 +441,31 @@ class StackingInterface(QWidget):
         else:
             self.siril.log("Lights sequence found - skipping conversion.", s.LogColor.BLUE)
 
-    def ProcessFlats(self, subdir=".", force=False):
+    def ProcessFlats(self, syntheticBias="=64*$OFFSET", subdir=".", force=False):
+        """Process flats"""
         if not isFitsFile(f"{subdir}/masters", "flat_stacked") or force:
             if not os.path.isdir(f"{subdir}/flats"):
-                raise ProcessingException("No flats found!")
-            # TODO: Implement flat stacking logic!
-            self.siril.log("Stacking flats... NOT IMPLEMENTED YET", s.LogColor.BLUE)
+                raise ProcessingException("No master_flat or unprocessed flats found!")
+            self.siril.log("Stacking flats...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "flats")
+            self.siril.cmd("convert", "flat", "-out=../process")
+            self.siril.cmd("cd", "../process")
+            self.siril.cmd("calibrate", "flat", f"-bias=\"{syntheticBias}\"")
+            self.siril.cmd("stack", "flat", "rej", "3", "3", "-norm=mul", "-out=../masters/flat_stacked")
+            self.siril.cmd("cd", "..")
         return
 
     def ProcessDarks(self, subdir=".", force=False):
         """Process darks"""
         if not isFitsFile(f"{subdir}/masters", "dark_stacked") or force:
             if not os.path.isdir(f"{subdir}/darks"):
-                raise ProcessingException("No darks found!")
+                raise ProcessingException("No master_dark or unprocessed darks found!")
             self.siril.log("Stacking darks...", s.LogColor.BLUE)
             self.siril.cmd("cd", "darks")
-            self.siril.cmd("convert", "dark", "../process")
+            self.siril.cmd("convert", "dark", "-out=../process")
+            self.siril.cmd("cd", "../process")
+            self.siril.cmd("stack", "dark", "rej", "3", "3", "-nonorm", "-out=../masters/dark_stacked")
+            self.siril.cmd("cd", "..")
         return
 
     def CalibrateLights(self, useDebayer, subdir=".", force=False):
@@ -632,7 +641,12 @@ class StackingInterface(QWidget):
             self.siril.cmd("load", f"Ha_{self.outfile_name.text()}")
             self.siril.log("Stacking complete.", s.LogColor.GREEN)
 
+        except ProcessingException as pe:
+            self.siril.cmd("pwd")
+            self.siril.log(f"Error in processing: {str(pe)}", s.LogColor.SALMON)
+
         except Exception as e:
+            self.siril.cmd("pwd")
             self.siril.log(f"Unhandled exception in ExecuteStacking(): {str(e)}", s.LogColor.SALMON)
 
         finally:

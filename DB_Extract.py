@@ -83,7 +83,7 @@ class StackingInterface(QWidget):
         self.setLayout(layout)
 
         # Ha stacking method group box
-        ha_method_box = QGroupBox(" Ha Stacking Method ")
+        ha_method_box = QGroupBox(" Ha Stacking Options ")
         method_layout = QVBoxLayout()
         ha_method_box.setLayout(method_layout)
         ha_method_box.setContentsMargins(8, 23, 8, 13)
@@ -130,7 +130,7 @@ class StackingInterface(QWidget):
         self.ha_drizzle.toggled.connect(self.OnHaDrizzleToggled)
 
         # OIII stacking method group box
-        oiii_method_box = QGroupBox(" OIII Stacking Method ")
+        oiii_method_box = QGroupBox(" OIII Stacking Options ")
         oiii_method_layout = QVBoxLayout()
         oiii_method_box.setLayout(oiii_method_layout)
         oiii_method_box.setContentsMargins(8, 23, 8, 13)
@@ -539,9 +539,9 @@ class StackingInterface(QWidget):
                     self.siril.log(f"Processing session: {subdir}", s.LogColor.BLUE)
                     merge_args.append(f"../{subdir}/process/pp_light")
                     self.siril.cmd("cd", f"{subdir}")
-                    self.ProcessDarks(subdir)
-                    self.ProcessFlats(subdir)
-                    self.ProcessLights(subdir)
+                    self.ProcessDarks(subdir=subdir)
+                    self.ProcessFlats(subdir=subdir)
+                    self.ProcessLights(subdir=subdir)
                     self.CalibrateLights(useDebayer=False, subdir=subdir)
                     self.siril.cmd("cd", "..")
 

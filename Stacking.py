@@ -82,25 +82,24 @@ class StackingInterface(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        # stacking method group box
-        method_box = QGroupBox(" Stacking Method ")
+        # stacking options group box
+        method_box = QGroupBox(" Stacking Options ")
         method_layout = QVBoxLayout()
         method_box.setLayout(method_layout)
         method_box.setContentsMargins(8, 23, 8, 13)
 
+        # drizzle method selection
+        radio_layout = QHBoxLayout()
         self.interpolation_radio = QRadioButton("Interpolation (Lanczos4)")
         self.interpolation_radio.setChecked(True)
         self.drizzle_radio = QRadioButton("Drizzle")
-        method_layout.addWidget(self.interpolation_radio)
-        method_layout.addWidget(self.drizzle_radio)
-        layout.addWidget(method_box)
+        radio_layout.addWidget(self.interpolation_radio)
+        radio_layout.addWidget(self.drizzle_radio)
+        method_layout.addLayout(radio_layout)
+        method_layout.addSpacing(10)
 
-        # drizzle settings group box (enabled only if Drizzle is selected)
-        drizzle_box = QGroupBox(" Drizzle Settings ")
+        # drizzle scale settings
         drizzle_layout = QFormLayout()
-        drizzle_box.setLayout(drizzle_layout)
-        drizzle_box.setContentsMargins(8, 23, 8, 13)
-
         self.scale_spin = QDoubleSpinBox()
         self.scale_spin.setDecimals(1)
         self.scale_spin.setRange(1.0, 4.0)
@@ -109,6 +108,7 @@ class StackingInterface(QWidget):
         self.scale_spin.setEnabled(False)
         drizzle_layout.addRow("Scale:", self.scale_spin)
 
+        # drizzle pixel fraction settings
         self.pixfrac_spin = QDoubleSpinBox()
         self.pixfrac_spin.setDecimals(2)
         self.pixfrac_spin.setRange(0.01, 1.0)
@@ -116,7 +116,9 @@ class StackingInterface(QWidget):
         self.pixfrac_spin.setSingleStep(0.05)
         self.pixfrac_spin.setEnabled(False)
         drizzle_layout.addRow("Pixel Fraction:", self.pixfrac_spin)
+        method_layout.addLayout(drizzle_layout)
 
+        # drizzle kernel selection
         self.drizzle_method = QComboBox()
         self.drizzle_method.addItems([
             "Square", 
@@ -129,8 +131,7 @@ class StackingInterface(QWidget):
         self.drizzle_method.setCurrentText("Square")
         self.drizzle_method.setEnabled(False)
         drizzle_layout.addRow("Kernel:", self.drizzle_method)
-
-        layout.addWidget(drizzle_box)
+        layout.addWidget(method_box)
         self.drizzle_radio.toggled.connect(self.OnDrizzleToggled)
 
         # pixel rejection settings group box
@@ -147,7 +148,7 @@ class StackingInterface(QWidget):
         self.rejection_combo.setFixedWidth(190)
         self.rejection_combo.currentTextChanged.connect(self.OnRejectionMethodChanged)
 
-        # generic spin boxes for rejection method
+        # generic spin boxes for rejection method settings
         self.high_spin = QDoubleSpinBox()
         self.high_spin.setDecimals(3)
         self.high_spin.setRange(0.001, 10.0)
@@ -202,6 +203,7 @@ class StackingInterface(QWidget):
         weighting_box.setLayout(weighting_layout)
         weighting_box.setContentsMargins(8, 23, 8, 13)
 
+        # pixel rejection weighting methods
         self.weighting_combo = QComboBox()
         for method in self.weightingMethods.keys():
             self.weighting_combo.addItem(method)
@@ -354,22 +356,33 @@ class StackingInterface(QWidget):
         else:
             self.siril.log("Lights sequence found - skipping conversion.", s.LogColor.BLUE)
 
-    def ProcessFlats(self, subdir=".", force=False):
+    def ProcessFlats(self, syntheticBias="=64*$OFFSET", subdir=".", force=False):
+        """Process flats"""
         if not isFitsFile(f"{subdir}/masters", "flat_stacked") or force:
+            self.siril.log(f"checking for flats in {subdir}/flats...")
             if not os.path.isdir(f"{subdir}/flats"):
-                raise ProcessingException("No flats found!")
-            # TODO: Implement flat stacking logic!
-            self.siril.log("Stacking flats... NOT IMPLEMENTED YET", s.LogColor.BLUE)
+                raise ProcessingException("No master_flat or unprocessed flats found!")
+            self.siril.log("Stacking flats...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "flats")
+            self.siril.cmd("convert", "flat", "-out=../process")
+            self.siril.cmd("cd", "../process")
+            self.siril.cmd("calibrate", "flat", f"-bias=\"{syntheticBias}\"")
+            self.siril.cmd("stack", "flat", "rej", "3", "3", "-norm=mul", "-out=../masters/flat_stacked")
+            self.siril.cmd("cd", "..")
         return
 
     def ProcessDarks(self, subdir=".", force=False):
         """Process darks"""
         if not isFitsFile(f"{subdir}/masters", "dark_stacked") or force:
+            self.siril.log(f"checking for darks in {subdir}/darks...")
             if not os.path.isdir(f"{subdir}/darks"):
-                raise ProcessingException("No darks found!")
+                raise ProcessingException("No master_dark or unprocessed darks found!")
             self.siril.log("Stacking darks...", s.LogColor.BLUE)
             self.siril.cmd("cd", "darks")
-            self.siril.cmd("convert", "dark", "../process")
+            self.siril.cmd("convert", "dark", "-out=../process")
+            self.siril.cmd("cd", "../process")
+            self.siril.cmd("stack", "dark", "rej", "3", "3", "-nonorm", "-out=../masters/dark_stacked")
+            self.siril.cmd("cd", "..")
         return
 
     def CalibrateLights(self, use_drizzle, subdir=".", force=False):
@@ -392,11 +405,28 @@ class StackingInterface(QWidget):
         else:
             self.siril.log("Calibrated sequence found - skipping calibration.", s.LogColor.BLUE)
 
+    def Register(self, sequenceName, useDrizzle, scale, pixfrac, kernel):
+        """Register/Align the sequence"""
+        if not os.path.isfile(f"./process/r_{sequenceName}_.seq"):
+            self.siril.log(f"Registering {sequenceName}...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "process")
+            self.siril.cmd("register", sequenceName, "-2pass")
+            if useDrizzle:
+                self.siril.cmd("seqapplyreg", sequenceName, "-framing=min", "-drizzle", 
+                               f"-scale={scale:.1f}", 
+                               f"-pixfrac={pixfrac:.2f}", 
+                               f"-kernel={kernel.lower()}")
+            else:
+                self.siril.cmd("seqapplyreg", sequenceName, "-framing=min", "-interp=lanczos4")
+            self.siril.cmd("cd", "..")
+        else:
+            self.siril.log(f"Registered sequence found for {sequenceName}, skipping registration.", s.LogColor.BLUE)
+
     def ExecuteStacking(self):
         """Main stacking logic, executed in a separate thread to keep the GUI responsive."""
         try:
             self.siril.log("Starting stacking...", s.LogColor.BLUE)
-            use_drizzle = self.drizzle_radio.isChecked()
+            useDrizzle = self.drizzle_radio.isChecked()
 
             # is this necessary?
             if not os.path.exists("process"):
@@ -411,10 +441,11 @@ class StackingInterface(QWidget):
 
             # kind of hacky logic to determine if this is a single-session or not
             if os.path.isdir(os.path.join(base_path, "lights")) and not session_dirs:
+                self.siril.log("Detected single-session folder structure.", s.LogColor.BLUE)
                 self.ProcessDarks()
                 self.ProcessFlats()
                 self.ProcessLights()
-                self.CalibrateLights(use_drizzle)
+                self.CalibrateLights(use_drizzle=useDrizzle)
             else:
                 # sanity check to just bail if we have nothing
                 if not session_dirs:
@@ -428,10 +459,10 @@ class StackingInterface(QWidget):
                     merge_args.append("../" + subdir + "/process/pp_light")
 
                     self.siril.cmd("cd", f"{subdir}")
-                    self.ProcessDarks(subdir)
-                    self.ProcessFlats(subdir)
-                    self.ProcessLights(subdir)
-                    self.CalibrateLights(use_drizzle, subdir)
+                    self.ProcessDarks(subdir=subdir)
+                    self.ProcessFlats(subdir=subdir)
+                    self.ProcessLights(subdir=subdir)
+                    self.CalibrateLights(use_drizzle=useDrizzle, subdir=subdir)
                     self.siril.cmd("cd", "..")
 
                 # merge all of the calibrated session subs into a single sequence for registration and stacking
@@ -443,19 +474,12 @@ class StackingInterface(QWidget):
                 else:
                     self.siril.log("Merged sequence found in process directory, skipping merge.", s.LogColor.BLUE)
 
-            # use a 2-pass algorithm for registration
-            if not os.path.isfile(f"./process/r_pp_light_.seq"):
-                self.siril.cmd("cd", "process")
-                self.siril.cmd("register", "pp_light", "-2pass")
-                if use_drizzle:
-                    self.siril.cmd("seqapplyreg", "pp_light", "-framing=min", "-drizzle", 
-                                   f"-scale={self.scale_spin.value():.1f}", 
-                                   f"-pixfrac={self.pixfrac_spin.value():.2f}", 
-                                   f"-kernel={self.drizzle_method.currentText().lower()}")
-                else:
-                    self.siril.cmd("seqapplyreg", "pp_light", "-framing=min", "-interp=lanczos4")
-            else:
-                self.siril.log("Registered sequence found, skipping registration.", s.LogColor.BLUE)
+            # register/align
+            self.Register("pp_light", 
+                          useDrizzle, 
+                          self.scale_spin.value(), 
+                          self.pixfrac_spin.value(), 
+                          self.drizzle_method.currentText())
                 
             # build the stacking command
             stacking_args = [
@@ -491,19 +515,20 @@ class StackingInterface(QWidget):
             stacking_args.append(f"-out=../{self.outfile_name.text()}")
 
             # run the stacking command in siril and open the result
+            self.siril.cmd("cd", "process")
             self.siril.cmd("stack", *stacking_args)
             self.siril.cmd("cd", "..")
             self.siril.cmd("load", f"{self.outfile_name.text()}")
             self.siril.log("Stacking complete.", s.LogColor.GREEN)
 
         except ProcessingException as pe:
+            self.siril.cmd("pwd")
             self.siril.log(f"Error in processing: {str(pe)}", s.LogColor.SALMON)
-            self.siril.cmd("cd", "..")  # Ensure we return to the base directory on error
-
+            
         except Exception as e:
+            self.siril.cmd("pwd")
             self.siril.log(f"Unhandled exception in ExecuteStacking(): {str(e)}", s.LogColor.SALMON)
-            self.siril.cmd("cd", "..")  # Ensure we return to the base directory on error
-
+            
         finally:
             self.siril.reset_progress()
             self.threadComplete.emit()

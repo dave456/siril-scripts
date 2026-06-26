@@ -16,13 +16,14 @@ import threading
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGroupBox, QRadioButton, QMessageBox,
-    QDoubleSpinBox, QFormLayout, QComboBox, QLabel, 
-    QCheckBox, QLineEdit
+    QDoubleSpinBox, QFormLayout, QComboBox, QLabel,
+    QCheckBox, QLineEdit, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 prefix = "session"
 base_path = "."
+
 
 class ProcessingException(Exception):
     """Custom exception for processing errors."""
@@ -63,7 +64,7 @@ class StackingInterface(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Dual Band Extraction")
+        self.setWindowTitle("Dual Band Extraction Wizard")
         self.setFixedWidth(800)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
@@ -71,7 +72,8 @@ class StackingInterface(QWidget):
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            QMessageBox.critical(self, "Error", "Failed to connect to Siril!")
+            _msg = QMessageBox(QMessageBox.Icon.Critical, "Error", "Failed to connect to Siril!", QMessageBox.StandardButton.Ok, self)
+            ShowMsgBox(_msg)
             self.close()
             return
 
@@ -394,15 +396,15 @@ class StackingInterface(QWidget):
                     dirs_to_clean.append(session_process)
 
         if not dirs_to_clean:
-            QMessageBox.information(self, "Clean", "No process directories found to clean.")
+            _msg = QMessageBox(QMessageBox.Icon.Information, "Clean", "No process directories found to clean.", QMessageBox.StandardButton.Ok, self)
+            ShowMsgBox(_msg)
             return
 
         dir_list = "\n".join(dirs_to_clean)
-        reply = QMessageBox.question(
-            self, "Confirm Clean",
+        _msg = QMessageBox(QMessageBox.Icon.Question, "Confirm Clean",
             f"Delete the following process directories?\n\n{dir_list}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        reply = QMessageBox.StandardButton(ShowMsgBox(_msg))
         if reply != QMessageBox.StandardButton.Yes:
             return
 
@@ -416,18 +418,18 @@ class StackingInterface(QWidget):
             self.siril.log(f"Error cleaning process directories: {str(e)}", s.LogColor.SALMON)
 
     def OnHelp(self):
-        QMessageBox.information(self, "Dual Band Extraction Help", 
+        _msg = QMessageBox(QMessageBox.Icon.Information, "Dual Band Extraction Help",
             "This tool extracts the Ha and OIII channels from an OSC image captured\n"
             "using a dual bandpass filter.\n\n"
             "Note: After extraction, the Ha data will be half the size of the OIII data.\n\n"
-            
             "If interpolation is selected for Ha, the data will be resampled (2x) to match\n"
             "the OIII image size. If drizzle is selected, the scale is fixed at 2.0 so the\n"
             "final image sizes will match.\n\n"
-
-            "If drizzle is selected for OIII, the scale can be adjusted as desired,\n" \
+            "If drizzle is selected for OIII, the scale can be adjusted as desired,\n"
             "but the OIII channel may be resampled down to match the Ha\n"
-            "image size depending upon the scale value selected.\n")
+            "image size depending upon the scale value selected.\n",
+            QMessageBox.StandardButton.Ok, self)
+        ShowMsgBox(_msg)
         
     def ProcessLights(self, subdir=".", force=False):
         """Process lights"""
@@ -653,7 +655,15 @@ class StackingInterface(QWidget):
             self.siril.reset_progress()
             self.threadComplete.emit()
 
+def ShowMsgBox(msg):
+    """Messagebox helper"""
+    box = msg.findChild(QDialogButtonBox)
+    if box:
+        box.setCenterButtons(True)
+    return msg.exec()
+
 def isFitsFile(dirname, basename):
+    """isFile helper that handles fits files with either suffix"""
     return any(
         os.path.isfile(f"{dirname}/{basename}{ext}")
         for ext in (".fit", ".fits")

@@ -16,8 +16,8 @@ import threading
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGroupBox, QRadioButton, QMessageBox,
-    QDoubleSpinBox, QFormLayout, QComboBox, QLabel, 
-    QCheckBox, QLineEdit
+    QDoubleSpinBox, QFormLayout, QComboBox, QLabel,
+    QCheckBox, QLineEdit, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -63,7 +63,7 @@ class StackingInterface(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Session Stacking")
+        self.setWindowTitle("Stacking Wizard")
         self.setFixedWidth(500)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
@@ -71,7 +71,8 @@ class StackingInterface(QWidget):
         try:
             self.siril.connect()
         except s.SirilConnectionError:
-            QMessageBox.critical(self, "Error", "Failed to connect to Siril!")
+            _msg = QMessageBox(QMessageBox.Icon.Critical, "Error", "Failed to connect to Siril!", QMessageBox.StandardButton.Ok, self)
+            ShowMsgBox(_msg)
             self.close()
             return
 
@@ -244,18 +245,23 @@ class StackingInterface(QWidget):
         layout.addWidget(output_box)
         layout.addSpacing(5)
 
-        # apply and clean buttons
+        # buttons
         button_row = QHBoxLayout()
         self.apply_btn = QPushButton("Stack")
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnStack)
         button_row.addWidget(self.apply_btn)
-        button_row.addSpacing(20)
+        #button_row.addSpacing(20)
 
         self.clean_btn = QPushButton("Clean")
         self.clean_btn.setFixedWidth(80)
         self.clean_btn.clicked.connect(self.OnClean)
         button_row.addWidget(self.clean_btn)
+
+        self.help_btn = QPushButton("Help")
+        self.help_btn.setFixedWidth(80)
+        self.help_btn.clicked.connect(self.OnHelp)
+        button_row.addWidget(self.help_btn)
         layout.addLayout(button_row)
 
     def OnThreadComplete(self):
@@ -301,6 +307,19 @@ class StackingInterface(QWidget):
         self.clean_btn.setEnabled(False)
         threading.Thread(target=self.ExecuteStacking, daemon=True).start()
 
+    def OnHelp(self):
+        help_text = (
+            "This wizard will stack images from single or multiple nights of imaging. It uses\n"
+            "the same directory layout that the default OSC stacking scripts use, specifically,\n"
+            "lights, darks, flats and masters.\n\n"
+            "For multi-night stacking, the sessions should be placed in directories starting\n"
+            "with the keyword 'session'. Separate darks and flats may be used for each\n"
+            "session. All pre-processed lights will be merged and stacked from the top \n"
+            "level directory."
+        )
+        _msg = QMessageBox(QMessageBox.Icon.Information, "Help", help_text, QMessageBox.StandardButton.Ok, self)
+        ShowMsgBox(_msg)
+
     def OnClean(self):
         session_dirs = [
             entry for entry in sorted(os.listdir(base_path))
@@ -323,15 +342,15 @@ class StackingInterface(QWidget):
                     dirs_to_clean.append(session_process)
 
         if not dirs_to_clean:
-            QMessageBox.information(self, "Clean", "No process directories found to clean.")
+            _msg = QMessageBox(QMessageBox.Icon.Information, "Clean", "No process directories found to clean.", QMessageBox.StandardButton.Ok, self)
+            ShowMsgBox(_msg)
             return
 
         dir_list = "\n".join(dirs_to_clean)
-        reply = QMessageBox.question(
-            self, "Confirm Clean",
+        _msg = QMessageBox(QMessageBox.Icon.Question, "Confirm Clean",
             f"Delete the following process directories?\n\n{dir_list}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        reply = QMessageBox.StandardButton(ShowMsgBox(_msg))
         if reply != QMessageBox.StandardButton.Yes:
             return
 
@@ -533,7 +552,15 @@ class StackingInterface(QWidget):
             self.siril.reset_progress()
             self.threadComplete.emit()
 
+def ShowMsgBox(msg):
+    """Messagebox helper"""
+    box = msg.findChild(QDialogButtonBox)
+    if box:
+        box.setCenterButtons(True)
+    return msg.exec()
+
 def isFitsFile(dirname, basename):
+    """isFile helper that handles fits files with either suffix"""
     return any(
         os.path.isfile(f"{dirname}/{basename}{ext}")
         for ext in (".fit", ".fits")

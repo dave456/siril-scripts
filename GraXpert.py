@@ -238,8 +238,10 @@ class SirilGraxpertInterface(QWidget):
         if self.apply_btn.isEnabled():
             return
         self.siril.update_progress("GraXpert running...", self.progress)
-        if self.progress <= 0.98:
+        if self.progress < 1.0:
             self.progress = self.progress + 0.01
+        else:
+            self.progress = 0.1
 
     def OnThreadComplete(self):
         """Re-enable the apply button after processing is complete."""

@@ -51,6 +51,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
 version = "v3.0.6"
 
+def _siril_quoted_path(path: str) -> str:
+    """Quote a filesystem path for Siril command parsing."""
+    return '"' + str(path).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
 # Simple collapsible group widget
 class CollapsibleGroup(QWidget):
     def __init__(self, title: str, parent=None):
@@ -384,7 +388,10 @@ class SirilCSWindow(QWidget):
         if not self.emission_file or not self.component_file:
             QMessageBox.warning(self, "Missing file", "Please select the emission line component and corresponding color component files.")
             return
-        self.siril.cmd("load", self.emission_file)
+        if not os.path.isfile(self.emission_file):
+            QMessageBox.critical(self, "File not found", f"Selected emission file could not be found:\n{self.emission_file}")
+            return
+        self.siril.cmd("load", _siril_quoted_path(self.emission_file))
 
     def on_emission_changed(self, text: str):
         """ Drop-down callback for selection change"""
@@ -434,7 +441,7 @@ class SirilCSWindow(QWidget):
             hdu.writeto(out_name, overwrite=True)
 
             # Load into Siril
-            self.siril.cmd("load", out_name)
+            self.siril.cmd("load", _siril_quoted_path(out_name))
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error generating continuum subtracted image:\n{e}")
@@ -475,7 +482,7 @@ class SirilCSWindow(QWidget):
             hdu.writeto(out_name, overwrite=True)
 
             # Load into Siril
-            self.siril.cmd("load", out_name)
+            self.siril.cmd("load", _siril_quoted_path(out_name))
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error during blending:\n{e}")

@@ -1,5 +1,9 @@
 #
-# Display color histogram of the currently loaded image in Siril
+# Display color histogram of the currently loaded image in Siril.
+#
+# Originally I wrote this with a little button that you could just leave running
+# on top of siril, but I realized that it was a bit overkill for what I wanted,
+# so now its just a script that pops up the histogram.
 #
 # SPDX-License-Identifier: GPL-3.0
 # Author: Dave Lindner (c) 2025 lindner234 <AT> gmail
@@ -26,7 +30,6 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QVBoxLayout,
 
 class SirilHistogramInterface(QWidget):
     """Simple always-on-top PyQt6 window for generating histograms."""
-
     def __init__(self):
         super().__init__()
 
@@ -124,7 +127,8 @@ class SirilHistogramInterface(QWidget):
             pass
         super().closeEvent(event)
 
-def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False):
+
+def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True, dark=False, linear=False, block=None):
     """Compute and plot the color histogram of the given image data."""
 
     # tweak for sirils odd channel layout
@@ -170,7 +174,7 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
         text_color = 'k'
 
     # Create figure and axes; set facecolor for dark background
-    fig, ax = plt.subplots(figsize=(8, 5), facecolor=bg_color)
+    fig, ax = plt.subplots(num="Siril Histogram", figsize=(8, 5), facecolor=bg_color)
     if bg_color is not None:
         ax.set_facecolor(bg_color)
         # adjust tick and spine colors for visibility
@@ -197,13 +201,38 @@ def compute_and_plot_color_hist(data, title, bins=256, save_path=None, show=True
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
     if show and not save_path:
-        # Avoid nested Qt event loops when running inside an existing QApplication.
-        if QApplication.instance() is not None:
-            plt.show(block=False)
-        else:
-            plt.show()
+        # Determine blocking behavior: if not explicitly set, avoid nested Qt event loops
+        if block is None:
+            block = QApplication.instance() is None
+        plt.show(block=block)
 
-def main():
+def view_no_gui():
+    """View histogram without GUI"""
+    siril = s.SirilInterface()
+    try:
+        siril.connect()
+        siril.cmd("requires", "1.3.6")
+        if not siril.is_image_loaded():
+            print("No image loaded.")
+            return
+        data = siril.get_image_pixeldata()
+        compute_and_plot_color_hist(
+            data,
+            os.path.basename(siril.get_image_filename()),
+            dark=True,
+            block=True,
+        )
+    except s.SirilConnectionError:
+        print("Failed to connect to Siril.")
+    except s.CommandError:
+        print("Incompatible Siril version.")
+    finally:
+        try:
+            siril.disconnect()
+        except Exception:
+            pass
+
+def view_with_gui():
     app = QApplication.instance()
     owns_app = app is None
     if owns_app:
@@ -225,4 +254,5 @@ def main():
                 pass
 
 if __name__ == "__main__":
-    main()
+    #view_with_gui()
+    view_no_gui()

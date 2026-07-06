@@ -4,7 +4,8 @@
 # This script uses the undo stack to blend the last two states with a mask allowing users to 
 # apply masks to their images. The mask can be a FITS or TIFF file, and should be a single-channel 
 # grayscale image where pixel values where white (1.0) indicate areas to take from the current image, 
-# and black (0.0) indicate areas to take from the previous image, with values in between blending the two.
+# and black (0.0) indicate areas to take from the previous image, with values in between blending 
+# the two. Thanks to Riccardo Paterniti's code for creating masks which I ruthlessly swiped.
 #
 # SPDX-License-Identifier: GPL-3.0
 # Author: Dave Lindner (c) 2026 lindner234 <AT> gmail
@@ -25,12 +26,491 @@ import cv2
 import numpy as np
 
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox
+    QApplication, QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
+    QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox,
+    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsPathItem,
+    QGraphicsEllipseItem, QSlider, QLabel,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
+from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QCursor, QPainterPath, QRadialGradient, QBrush
 from astropy.io import fits
 
+
+# ------------------------------------------------------------------------------
+# DISPLAY HELPERS
+# ------------------------------------------------------------------------------
+
+def _autostretch_for_display(data: np.ndarray) -> np.ndarray:
+    """
+    Convert planes-first float32 (C, H, W) or 2D (H, W) to uint8 (H, W, 3) RGB.
+    Uses MTF autostretch (median + MAD shadows-clipping) — same algorithm as VeraLux_Nox
+    and Siril's own display stretch, so linear data looks the same as in the main window.
+    """
+    # Convert to HWC float32
+    if data.ndim == 3:
+        rgb = np.moveaxis(data, 0, -1).astype(np.float32)
+        if rgb.shape[2] == 1:
+            rgb = np.repeat(rgb, 3, axis=2)
+        else:
+            rgb = rgb[:, :, :3]
+    else:
+        rgb = np.stack([data, data, data], axis=-1).astype(np.float32)
+
+    MAD_NORM       = 1.4826
+    SHADOWS_CLIP   = -2.8
+    TARGET_BG      = 0.25
+
+    def _mtf(x, m, lo, hi):
+        dist = hi - lo
+        if dist < 1e-9:
+            return np.zeros_like(x)
+        xp  = np.clip((x - lo) / dist, 0.0, 1.0)
+        num = (m - 1.0) * xp
+        den = (2.0 * m - 1.0) * xp - m
+        return num / (den + 1e-9)
+
+    # Linked-channel stretch: average shadow/midtone across R, G, B
+    sum_c0 = sum_med = 0.0
+    for c in range(3):
+        ch     = rgb[:, :, c]
+        stride = max(1, ch.size // 100_000)
+        sample = ch.ravel()[::stride]
+        med    = float(np.median(sample))
+        mad    = float(np.median(np.abs(sample - med))) * MAD_NORM or 1e-5
+        sum_c0  += med + SHADOWS_CLIP * mad
+        sum_med += med
+
+    c0       = max(0.0, sum_c0 / 3.0)
+    midtones = float(_mtf(np.array([sum_med / 3.0 - c0]), TARGET_BG, 0.0, 1.0)[0])
+
+    return (np.clip(_mtf(rgb, midtones, c0, 1.0), 0.0, 1.0) * 255).astype(np.uint8)
+
+
+# ------------------------------------------------------------------------------
+# PAINT VIEW (canvas widget for mask painting)
+# Adapted from VeraLux_Nox.py PaintView — kept close to source to ease merges.
+# ------------------------------------------------------------------------------
+
+class PaintView(QGraphicsView):
+    def __init__(self, scene: QGraphicsScene, parent=None):
+        super().__init__(scene, parent)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.brush_size = 50
+        self.tool_mode = 'brush'
+        self.is_drawing = False
+        self.is_space_held = False
+        self.mask_pixmap_item = None
+        self.mask_image = None
+        self.temp_path_item = None
+        self.current_lasso_path = None
+        self.preview_item = None
+        self.hardness_blur = 0
+        # Cyan overlay — visible on both dark nebulae and bright backgrounds
+        self.paint_color = QColor(100, 200, 255, 120)
+
+    def set_content(self, qimg_bg: QImage) -> None:
+        self.scene().clear()
+        self.scene().addPixmap(QPixmap.fromImage(qimg_bg))
+        w, h = qimg_bg.width(), qimg_bg.height()
+
+        if self.mask_image is None or self.mask_image.width() != w or self.mask_image.height() != h:
+            self.mask_image = QImage(w, h, QImage.Format.Format_ARGB32)
+            self.mask_image.fill(QColor(0, 0, 0, 0))
+
+        self.mask_pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(self.mask_image))
+        self.mask_pixmap_item.setZValue(10)
+        self.scene().addItem(self.mask_pixmap_item)
+        self.scene().setSceneRect(0, 0, w, h)
+
+        self.preview_item = QGraphicsEllipseItem()
+        self.preview_item.setPen(QPen(QColor(136, 170, 255), 2, Qt.PenStyle.DashLine))
+        self.preview_item.setZValue(100)
+        self.preview_item.hide()
+        self.scene().addItem(self.preview_item)
+
+    def fit_view(self) -> None:
+        if self.scene().items():
+            self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def update_mask_display(self) -> None:
+        if self.mask_pixmap_item and self.mask_image:
+            self.mask_pixmap_item.setPixmap(QPixmap.fromImage(self.mask_image))
+
+    def update_brush_preview_geometry(self, scene_pos=None) -> None:
+        if not self.preview_item:
+            return
+        if scene_pos is None:
+            scene_pos = self.mapToScene(self.viewport().rect().center())
+        r = self.brush_size / 2.0
+        self.preview_item.setRect(scene_pos.x() - r, scene_pos.y() - r, self.brush_size, self.brush_size)
+
+    def enterEvent(self, event) -> None:
+        self.setFocus()
+        if self.tool_mode in ('brush', 'eraser') and not self.is_space_held:
+            if self.preview_item:
+                self.preview_item.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self.preview_item:
+            self.preview_item.hide()
+        super().leaveEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_held = True
+            if self.preview_item:
+                self.preview_item.hide()
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            self.is_space_held = False
+            self.update_custom_cursor()
+        super().keyReleaseEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if self.is_space_held or not self.is_drawing:
+            factor = 1.15 if event.angleDelta().y() > 0 else 1.0 / 1.15
+            self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+            self.scale(factor, factor)
+        else:
+            super().wheelEvent(event)
+
+    def update_custom_cursor(self) -> None:
+        if self.is_space_held:
+            return
+        if self.tool_mode in ('brush', 'eraser'):
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            if self.preview_item:
+                pen_color = QColor(255, 255, 255) if self.tool_mode == 'eraser' else QColor(136, 170, 255)
+                self.preview_item.setPen(QPen(pen_color, 2, Qt.PenStyle.DashLine))
+                self.preview_item.show()
+                pos = self.mapFromGlobal(QCursor.pos())
+                if self.rect().contains(pos):
+                    self.update_brush_preview_geometry(self.mapToScene(pos))
+        elif self.tool_mode == 'lasso':
+            if self.preview_item:
+                self.preview_item.hide()
+            self._set_lasso_cursor()
+        else:
+            if self.preview_item:
+                self.preview_item.hide()
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _set_lasso_cursor(self) -> None:
+        pix = QPixmap(32, 32)
+        pix.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(136, 170, 255), 2))
+        path = QPainterPath()
+        path.moveTo(20, 20)
+        path.cubicTo(28, 10, 10, 0, 10, 10)
+        path.cubicTo(10, 20, 25, 25, 20, 20)
+        painter.drawPath(path)
+        painter.drawLine(20, 20, 28, 28)
+        painter.end()
+        self.setCursor(QCursor(pix, 0, 0))
+
+    def paint_brush_at(self, pos) -> None:
+        if not self.mask_image:
+            return
+
+        radius = self.brush_size / 2.0
+        blur   = min(int(radius), self.hardness_blur)
+
+        painter = QPainter(self.mask_image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        if self.tool_mode == 'eraser':
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            if blur > 0:
+                inner = max(0.0, (radius - blur) / radius)
+                grad  = QRadialGradient(pos.x(), pos.y(), radius)
+                grad.setColorAt(0.0,   QColor(0, 0, 0, 255))
+                grad.setColorAt(inner, QColor(0, 0, 0, 255))
+                grad.setColorAt(1.0,   QColor(0, 0, 0, 0))
+                painter.setBrush(QBrush(grad))
+            else:
+                painter.setBrush(QColor(0, 0, 0, 255))
+        else:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if blur > 0:
+                c     = self.paint_color
+                inner = max(0.0, (radius - blur) / radius)
+                grad  = QRadialGradient(pos.x(), pos.y(), radius)
+                grad.setColorAt(0.0,   c)
+                grad.setColorAt(inner, c)
+                grad.setColorAt(1.0,   QColor(c.red(), c.green(), c.blue(), 0))
+                painter.setBrush(QBrush(grad))
+            else:
+                painter.setBrush(self.paint_color)
+
+        painter.drawEllipse(pos, radius, radius)
+        painter.end()
+        self.update_mask_display()
+
+    def finish_lasso(self) -> None:
+        if not self.mask_image or not self.current_lasso_path:
+            return
+        if self.temp_path_item:
+            self.scene().removeItem(self.temp_path_item)
+            self.temp_path_item = None
+        self.current_lasso_path.closeSubpath()
+        painter = QPainter(self.mask_image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.paint_color)
+        painter.drawPath(self.current_lasso_path)
+        painter.end()
+        self.update_mask_display()
+        self.current_lasso_path = None
+
+    def mousePressEvent(self, event) -> None:
+        if self.is_space_held:
+            super().mousePressEvent(event)
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_drawing = True
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            pos = self.mapToScene(event.pos())
+            if self.tool_mode in ('brush', 'eraser'):
+                self.paint_brush_at(pos)
+            elif self.tool_mode == 'lasso':
+                self.current_lasso_path = QPainterPath(pos)
+                self.temp_path_item = QGraphicsPathItem(self.current_lasso_path)
+                pen = QPen(self.paint_color, 2)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                self.temp_path_item.setPen(pen)
+                self.temp_path_item.setBrush(QColor(0, 0, 0, 0))
+                self.scene().addItem(self.temp_path_item)
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        pos = self.mapToScene(event.pos())
+        if self.tool_mode in ('brush', 'eraser') and not self.is_space_held:
+            self.update_brush_preview_geometry(pos)
+            if self.preview_item and not self.preview_item.isVisible():
+                self.preview_item.show()
+        if self.is_space_held:
+            super().mouseMoveEvent(event)
+            return
+        if self.is_drawing:
+            if self.tool_mode in ('brush', 'eraser'):
+                self.paint_brush_at(pos)
+            elif self.tool_mode == 'lasso' and self.current_lasso_path:
+                self.current_lasso_path.lineTo(pos)
+                if self.temp_path_item:
+                    self.temp_path_item.setPath(self.current_lasso_path)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.is_drawing:
+            self.is_drawing = False
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            if self.tool_mode == 'lasso':
+                self.finish_lasso()
+        super().mouseReleaseEvent(event)
+
+    def clear_mask(self) -> None:
+        if self.mask_image:
+            self.mask_image.fill(QColor(0, 0, 0, 0))
+            self.update_mask_display()
+
+    def get_painted_mask(self) -> np.ndarray | None:
+        """Return bool (H, W) array — True where the user has painted."""
+        if not self.mask_image:
+            return None
+        ptr = self.mask_image.bits()
+        ptr.setsize(self.mask_image.sizeInBytes())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
+            self.mask_image.height(), self.mask_image.width(), 4
+        )
+        return arr[:, :, 3] > 0
+
+
+# ------------------------------------------------------------------------------
+# MASK PAINTER DIALOG
+# ------------------------------------------------------------------------------
+
+class MaskPainterDialog(QDialog):
+    """
+    Full-screen interactive mask painter.
+    Shows the current Siril image and lets the user paint a mask over it.
+    Painted (white) areas become 65535 in the saved 16-bit TIFF; everything
+    else is 0.  The mask is saved in FITS row orientation (row 0 = bottom).
+    """
+
+    def __init__(self, parent: QWidget, image_data: np.ndarray):
+        super().__init__(parent)
+        self.setWindowTitle("Create Mask — Paint on Image")
+        self.setModal(True)
+        self.resize(1200, 800)
+        self._image_data = image_data
+        self._saved_path: str | None = None
+        self._setup_ui()
+        self._load_image()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+
+    def _setup_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(4)
+
+        # ── Toolbar ────────────────────────────────────────────────────
+        tb = QHBoxLayout()
+
+        tb.addWidget(QLabel("Tool:"))
+        self._btn_brush  = QPushButton("Brush")
+        self._btn_eraser = QPushButton("Eraser")
+        self._btn_lasso  = QPushButton("Lasso")
+        for btn in (self._btn_brush, self._btn_eraser, self._btn_lasso):
+            btn.setCheckable(True)
+            tb.addWidget(btn)
+        self._btn_brush.setChecked(True)
+        self._btn_brush .clicked.connect(lambda: self._set_tool('brush'))
+        self._btn_eraser.clicked.connect(lambda: self._set_tool('eraser'))
+        self._btn_lasso .clicked.connect(lambda: self._set_tool('lasso'))
+
+        tb.addSpacing(20)
+        tb.addWidget(QLabel("Brush Size:"))
+        self._slider_size = QSlider(Qt.Orientation.Horizontal)
+        self._slider_size.setRange(5, 300)
+        self._slider_size.setValue(50)
+        self._slider_size.setFixedWidth(160)
+        self._lbl_size = QLabel("50px")
+        self._lbl_size.setFixedWidth(40)
+        self._slider_size.valueChanged.connect(self._on_brush_size_changed)
+        tb.addWidget(self._slider_size)
+        tb.addWidget(self._lbl_size)
+
+        tb.addSpacing(12)
+        tb.addWidget(QLabel("Blur:"))
+        self._slider_blur = QSlider(Qt.Orientation.Horizontal)
+        self._slider_blur.setRange(0, 150)
+        self._slider_blur.setValue(0)
+        self._slider_blur.setFixedWidth(120)
+        self._lbl_blur = QLabel("0px")
+        self._lbl_blur.setFixedWidth(40)
+        self._slider_blur.valueChanged.connect(self._on_blur_changed)
+        tb.addWidget(self._slider_blur)
+        tb.addWidget(self._lbl_blur)
+
+        tb.addStretch()
+        tb.addWidget(QLabel("Zoom:"))
+        for label, factor in (("-", 1 / 1.25), ("+", 1.25)):
+            btn = QPushButton(label)
+            btn.setFixedWidth(32)
+            btn.clicked.connect(lambda _=None, f=factor: self._view.scale(f, f))
+            tb.addWidget(btn)
+        btn_fit = QPushButton("Fit")
+        btn_fit.setFixedWidth(36)
+        btn_fit.clicked.connect(lambda: self._view.fit_view())
+        tb.addWidget(btn_fit)
+
+        tb.addSpacing(16)
+        btn_clear = QPushButton("Clear")
+        btn_clear.clicked.connect(lambda: self._view.clear_mask())
+        tb.addWidget(btn_clear)
+
+        root.addLayout(tb)
+
+        # ── Canvas ──────────────────────────────────────────────────────
+        self._scene = QGraphicsScene()
+        self._view = PaintView(self._scene, self)
+        root.addWidget(self._view, 1)
+
+        # ── Bottom buttons ──────────────────────────────────────────────
+        br = QHBoxLayout()
+        br.addWidget(QLabel("Scroll wheel or +/- to zoom  |  Hold Space + drag to pan  |  Paint white mask over the image"))
+        br.addStretch()
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+        br.addWidget(btn_cancel)
+        btn_save = QPushButton("Save Mask…")
+        btn_save.clicked.connect(self._on_save)
+        br.addWidget(btn_save)
+        root.addLayout(br)
+
+        self._tool_btns = (self._btn_brush, self._btn_eraser, self._btn_lasso)
+
+    def _load_image(self) -> None:
+        uint8 = _autostretch_for_display(self._image_data)
+        # FITS row 0 = bottom; flip so Qt displays it the right way up
+        display = np.ascontiguousarray(np.flipud(uint8))
+        h, w, _ = display.shape
+        qimg = QImage(display.tobytes(), w, h, 3 * w, QImage.Format.Format_RGB888)
+        self._view.set_content(qimg)
+        self._view.fit_view()
+
+    # ------------------------------------------------------------------
+    # Slots
+    # ------------------------------------------------------------------
+
+    def _set_tool(self, tool: str) -> None:
+        for btn in self._tool_btns:
+            btn.setChecked(False)
+        {"brush": self._btn_brush, "eraser": self._btn_eraser, "lasso": self._btn_lasso}[tool].setChecked(True)
+        self._view.tool_mode = tool
+        self._view.update_custom_cursor()
+
+    def _on_brush_size_changed(self, value: int) -> None:
+        self._view.brush_size = value
+        self._lbl_size.setText(f"{value}px")
+
+    def _on_blur_changed(self, value: int) -> None:
+        self._view.hardness_blur = value
+        self._lbl_blur.setText(f"{value}px")
+
+    def _on_save(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Mask as 16-bit TIFF", "", "TIFF files (*.tiff *.tif)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(('.tif', '.tiff')):
+            path += '.tiff'
+
+        painted = self._view.get_painted_mask()
+        if painted is None or not painted.any():
+            QMessageBox.warning(self, "Empty Mask", "Nothing has been painted yet.")
+            return
+
+        # Flip back to FITS orientation (row 0 = bottom) before saving
+        mask_u16 = np.flipud(painted).astype(np.uint16) * 65535
+        try:
+            tifffile_mod = importlib.import_module("tifffile")
+            tifffile_mod.imwrite(path, mask_u16)
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Could not save mask:\n{e}")
+            return
+
+        self._saved_path = path
+        self.accept()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._view.fit_view()
+
+    @property
+    def saved_path(self) -> str | None:
+        return self._saved_path
+
+
+# ------------------------------------------------------------------------------
+# SIGNAL BRIDGE
+# ------------------------------------------------------------------------------
 
 class SignalBridge(QObject):
     """Signal bridge for background thread callbacks"""
@@ -118,6 +598,11 @@ class MaskWindow(QWidget):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
+        self.create_btn = QPushButton("Create")
+        self.create_btn.clicked.connect(self.OnCreateMask)
+        button_row.addWidget(self.create_btn)
+        button_row.addStretch()
+
         self.mask_btn = QPushButton("Mask")
         self.mask_btn.clicked.connect(self.OnMask)
         self.mask_btn.setEnabled(False)
@@ -131,7 +616,25 @@ class MaskWindow(QWidget):
 
         layout.addLayout(button_row)
 
+    def OnCreateMask(self):
+        """Open the interactive mask painter so the user can paint a mask."""
+        if not self.siril.is_image_loaded():
+            QMessageBox.warning(self, "No Image", "No image is currently loaded in Siril.")
+            return
 
+        try:
+            with self.siril.image_lock():
+                image_data = self.siril.get_image_pixeldata()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not read image data from Siril:\n{e}")
+            return
+
+        dlg = MaskPainterDialog(self, image_data)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.saved_path:
+            self.mask_file_path = dlg.saved_path
+            self.mask_line.setText(os.path.basename(dlg.saved_path))
+            self.mask_btn.setEnabled(True)
+            self.siril.log(f"Mask saved: {dlg.saved_path}", s.LogColor.GREEN)
     def OnSelectMask(self):
         """Open file dialog to select mask file"""
         # prefer tiff because that's what I use for masking

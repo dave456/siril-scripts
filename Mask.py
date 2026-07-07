@@ -926,12 +926,12 @@ class MaskWindow(QWidget):
             # Planes-first: expand mask to match channels dimension
             # mask is (H, W), expand to (1, H, W)
             mask_expanded = mask[np.newaxis, :, :]
-            if self.invert_checkbox.isChecked():
+            if not self.invert_checkbox.isChecked():
                 mask_expanded = 1.0 - mask_expanded
             result = current * mask_expanded + previous * (1 - mask_expanded)
         else:
             # 2D case
-            if self.invert_checkbox.isChecked():
+            if not self.invert_checkbox.isChecked():
                 mask = 1.0 - mask
             result = current * mask + previous * (1 - mask)
         

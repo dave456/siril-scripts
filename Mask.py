@@ -654,9 +654,10 @@ class MaskWindow(QWidget):
         help_text = (
             "This utility allows you to apply a mask to blend the current image with the previous state from the undo stack.\n\n"
             "1. Load an image in Siril and make some adjustments, e.g. denoise, curves, etc.\n"
-            "2. Click 'Select' to choose a mask file (FITS or TIFF format).\n"
-            "3. Optionally invert the mask if desired.\n"
-            "4. Click 'Mask' to apply the blending operation.\n\n"
+            "2. Click 'Create' to create a mask from the existing image.\n"
+            "3. Click 'Select' to choose an existing mask file (FITS or TIFF format).\n"
+            "4. Optionally invert the mask if desired.\n"
+            "5. Click 'Mask' to apply the blending operation.\n\n"
             "The result will be a blend of the current and previous images based on the mask, and will be added to the undo stack "
             "for further adjustments if needed.\n\n"
             "Note: Plate solved images may be flipped in Siril, resulting in an incorrect orientation of the mask when exported "
@@ -720,6 +721,7 @@ class MaskWindow(QWidget):
                 if np.array_equal(current_data, previous_data):
                     self.siril.log("Warning: Undo did not change image data - cannot apply mask", s.LogColor.SALMON)
                     self.signals.error_occurred.emit("Undo did not change image data - cannot apply mask")
+                    self.siril.reset_progress()
                     return
 
                 # Apply mask blend operation
@@ -789,9 +791,11 @@ class MaskWindow(QWidget):
         # Specifically, photo editing apps (ahem, photoshop) often save masks as RGB or RGBA tiffs, 
         # where the actual mask data is in the alpha channel, and the RGB channels are just a preview. 
         # Other apps may save as grayscale, but with photometric metadata that indicates whether white 
-        # or black is the "1" value. We started with imread and we got to here...
-        # The problem is, I really like creating my custom masks in other apps, but this may have gotten
-        # away from me.
+        # or black is the "1" value. Contrary to what the help says, all these file formats should 
+        # mostly work. Mostly...
+        # 
+        # We started with imread and we got to here... The problem is, I really like creating my 
+        # custom masks in other apps, but this code may have gotten away from me.
         try:
             tifffile_module = importlib.import_module("tifffile")
 

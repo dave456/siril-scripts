@@ -17,7 +17,8 @@ import numpy as np
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QGroupBox, QSlider, QMessageBox
+    QLabel, QPushButton, QGroupBox, QSlider, QMessageBox,
+    QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -69,6 +70,7 @@ class SirilCLAHEInterface(QWidget):
         self._preview_timer.timeout.connect(self.SchedulePreview)
 
         self.CreateWidgets()
+        self.SchedulePreview() # update the preview on startup
 
     def CreateWidgets(self):
         """Creates the GUI widgets for the CLAHE interface."""
@@ -99,9 +101,9 @@ class SirilCLAHEInterface(QWidget):
         self.tilesize_slider = QSlider(Qt.Orientation.Horizontal)
         self.tilesize_slider.setMinimum(4)
         self.tilesize_slider.setMaximum(256)
-        self.tilesize_slider.setValue(8)
+        self.tilesize_slider.setValue(32)
         params_layout.addWidget(self.tilesize_slider, 1, 1)
-        self.tilesize_label = QLabel("8")
+        self.tilesize_label = QLabel("32")
         self.tilesize_label.setFixedWidth(40)
         self.tilesize_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         params_layout.addWidget(self.tilesize_label, 1, 2)
@@ -173,7 +175,30 @@ class SirilCLAHEInterface(QWidget):
         self.apply_btn.clicked.connect(self.OnApply)
         button_row.addWidget(self.apply_btn)
 
+        self.help_btn = QPushButton("Help") 
+        self.help_btn.setFixedWidth(80)
+        self.help_btn.clicked.connect(self.OnHelp)
+        button_row.addWidget(self.help_btn)
+
         layout.addLayout(button_row)
+
+    def OnHelp(self):
+        help_text = (
+            "This tool will emphasize contrast at selectable ranges of the image. The tile size\n" \
+            "parameter is used to select these ranges. The main siril window will update as\n"
+            "changes are made in the settings. The image will not be saved until the Apply\n"
+            "button is pressed.\n\n"
+            "The strength slider will blend the effect with the original image. The mask\n"
+            "sliders can be used to selectively prevent CLAHE in light or dark regions.\n"
+            "Setting both to 100 will cause it to apply to the entire image. Finally, the\n"
+            "clip limit can be used to suppress noise caused by the contrast enhancement,\n"
+            "but it will also reduce the effect.\n\n"
+            "The dialog will remain open after the Apply button is clicked as it can\n"
+            "sometimes be effective to apply CLAHE at multiple tile sizes, e.g. 32,\n"
+            "96, 128, etc."
+        )
+        _msg = QMessageBox(QMessageBox.Icon.Information, "Help", help_text, QMessageBox.StandardButton.Ok, self)
+        ShowMsgBox(_msg)
 
     def OnTogglePreview(self):
         """Switch between showing the CLAHE result and the original image."""
@@ -425,6 +450,12 @@ def basic_clahe(image: np.ndarray, strength: float = 0.5, clip_limit: float = 2.
         # back to planes-first (3, H, W)
         return np.transpose(result_hwc, (2, 0, 1))
 
+def ShowMsgBox(msg):
+    """Messagebox helper"""
+    box = msg.findChild(QDialogButtonBox)
+    if box:
+        box.setCenterButtons(True)
+    return msg.exec()
 
 def main():
     try:

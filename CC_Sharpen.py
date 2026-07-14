@@ -20,13 +20,16 @@ from astropy.io import fits
 import numpy as np
 
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QGroupBox, QSlider, QRadioButton, QCheckBox, QMessageBox,
-    QDoubleSpinBox, QSpinBox, QComboBox
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
+    QLabel, QPushButton, QGroupBox, QSlider, QCheckBox, QMessageBox,
+    QDoubleSpinBox, QSpinBox, QDialog, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
-sharpenExecutable = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
+# Settings keys
+SETTINGS_ORG = "CaribouAstro"
+SETTINGS_APP = "CosmicClaritySharpen"
+DEFAULT_EXE = "C:/Program Files/SetiAstroSuitePro/setiastrosuitepro.exe"
 
 class SirilCosmicClarityInterface(QWidget):
     _enable_apply = pyqtSignal()
@@ -37,6 +40,7 @@ class SirilCosmicClarityInterface(QWidget):
         self.setWindowTitle("Cosmic Clarity Sharpening")
         self.setFixedWidth(450)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
 
         # Initialize Siril connection
         self.siril = s.SirilInterface()
@@ -50,6 +54,34 @@ class SirilCosmicClarityInterface(QWidget):
 
         self._enable_apply.connect(lambda: self.apply_btn.setEnabled(True))
         self.CreateWidgets()
+        self.LoadSettings()
+
+    def LoadSettings(self):
+        """Load settings from QSettings and update the UI accordingly."""
+        s = self.settings
+        self.sharpen_executable = s.value("sharpen_path", DEFAULT_EXE)
+        self.sharpen_mode.setCurrentIndex(int(s.value("sharpen_mode", 2)))
+        self.correction_mode.setCurrentIndex(int(s.value("correction_mode", 0)))
+        self.non_stellar_psf_slider.setValue(int(s.value("non_stellar_psf", 30)))
+        self.non_stellar_psf_label.setText(f"{self.non_stellar_psf_slider.value() / 10:.1f}")
+        self.non_stellar_str_slider.setValue(int(s.value("non_stellar_str", 85)))
+        self.non_stellar_str_label.setText(f"{self.non_stellar_str_slider.value() / 100:.2f}")
+        self.stellar_str_slider.setValue(int(s.value("stellar_str", 50)))
+        self.stellar_str_label.setText(f"{self.stellar_str_slider.value() / 100:.2f}")
+    
+    def SaveSettings(self):
+        """Save a select set of settings via QSettings."""
+        s = self.settings
+        s.setValue("sharpen_path", self.sharpen_executable)
+        s.setValue("sharpen_mode", self.sharpen_mode.currentIndex())
+        s.setValue("correction_mode", self.correction_mode.currentIndex())
+        s.setValue("non_stellar_psf", self.non_stellar_psf_slider.value())
+        s.setValue("non_stellar_str", self.non_stellar_str_slider.value())
+        s.setValue("stellar_str", self.stellar_str_slider.value())
+    
+    def closeEvent(self, event):
+        self.SaveSettings()
+        super().closeEvent(event)
 
     def CreateWidgets(self):
         """Create the main dialog widgets."""
@@ -234,10 +266,21 @@ class SirilCosmicClarityInterface(QWidget):
 
         # Apply button
         button_row = QHBoxLayout()
+        button_row.addSpacing(36)
+        button_row.addStretch()
         self.apply_btn = QPushButton("Apply")
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnApply)
         button_row.addWidget(self.apply_btn)
+        button_row.addStretch()
+
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.setFixedWidth(36)
+        self.settings_btn.setFixedHeight(self.apply_btn.sizeHint().height())
+        self.settings_btn.clicked.connect(self.OpenSettings)
+        button_row.addWidget(self.settings_btn)
+
         layout.addLayout(button_row)
 
     def sharpeningMode(self):
@@ -263,8 +306,16 @@ class SirilCosmicClarityInterface(QWidget):
         if not self.siril.is_image_loaded():
             QMessageBox.critical(self, "Error", "No image loaded!")
             return
+        if not os.path.isfile(self.sharpen_executable):
+            QMessageBox.critical(self, "Error", f"Sharpen executable not found:\n{self.sharpen_executable}")
+            return
         self.apply_btn.setEnabled(False)
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
+
+    def OpenSettings(self):
+        dlg = SettingsDialog(self)
+        dlg.exec()
+        return
 
     async def RunCosmicClarity(self, inputFile, outputFile):
         """Run Cosmic Clarity"""
@@ -278,7 +329,7 @@ class SirilCosmicClarityInterface(QWidget):
             non_stellar_psf = f"{self.non_stellar_psf_slider.value() / 10:.1f}"
 
             command = [
-                sharpenExecutable,
+                self.sharpen_executable,
                 "cc",
                 "sharpen",
                 f"-i={inputFile}",
@@ -342,7 +393,7 @@ class SirilCosmicClarityInterface(QWidget):
                 error_message = stderr.decode('utf-8', errors='ignore')
                 raise subprocess.CalledProcessError(
                     process.returncode,
-                    sharpenExecutable,
+                    self.sharpen_executable,
                     error_message
                 )
 
@@ -415,6 +466,66 @@ class SirilCosmicClarityInterface(QWidget):
             # re-enable the Apply button from the main thread via signal
             self._enable_apply.emit()
             self.siril.reset_progress()
+
+class SettingsDialog(QDialog):
+    """Settings dialog for the Cosmic Clarity Sharpening interface."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedWidth(450)
+        self.settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        location_box = QGroupBox(" Executable Location ")
+        location_layout = QVBoxLayout()
+        location_box.setLayout(location_layout)
+
+        location_row = QHBoxLayout()
+        location_label = QLabel("Path:")
+        location_row.addWidget(location_label)
+        self.location_lineedit = QPlainTextEdit()
+        self.location_lineedit.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.location_lineedit.setFixedHeight(56)
+        self.sharpen_path = self.settings.value("sharpen_path", DEFAULT_EXE)
+        self.location_lineedit.setPlainText(self.sharpen_path)
+        location_row.addWidget(self.location_lineedit, 1)
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(lambda: self.OnSelectFile("sharpen_path", self.location_lineedit))
+        location_row.addWidget(browse_btn)
+        location_layout.addLayout(location_row)
+        layout.addWidget(location_box)
+        layout.addSpacing(10)
+
+        # ok and cancel buttons
+        button_row = QHBoxLayout()
+        button_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.setFixedWidth(80)
+        ok_btn.clicked.connect(self.OnOK)
+        button_row.addWidget(ok_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedWidth(80)
+        cancel_btn.clicked.connect(self.reject)
+        button_row.addWidget(cancel_btn)
+        layout.addLayout(button_row)
+        
+    def OnOK(self):
+        """Handle OK button click."""
+        self.sharpen_path = self.location_lineedit.toPlainText().strip()
+        self.settings.setValue("sharpen_path", self.sharpen_path)
+        self.close()
+
+    def OnSelectFile(self, file_attr: str, lineedit: QPlainTextEdit):
+        """Open a file dialog to select a file and update the line edit."""
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "Executable Files (*.exe);;All Files (*)")
+        if file_path:
+            setattr(self, file_attr, file_path)
+            lineedit.setPlainText(file_path)
 
 def mtf(m, img):
     """Midtones transfer function. Returns ((m-1)*x) / ((2m-1)*x - m)"""

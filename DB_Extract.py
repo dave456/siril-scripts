@@ -420,8 +420,9 @@ class StackingInterface(QWidget):
     def OnHelp(self):
         _msg = QMessageBox(QMessageBox.Icon.Information, "Dual Band Extraction Help",
             "This tool extracts the Ha and OIII channels from an OSC image captured\n"
-            "using a dual bandpass filter.\n\n"
-            "Note: After extraction, the Ha data will be half the size of the OIII data.\n\n"
+            "using Siril's built-in command seqextract_HaOIII.\n\n"
+            "Note: By design, the extracted Ha data sequence will be half the\n"
+            "size of the OIII data sequence.\n\n"
             "If interpolation is selected for Ha, the data will be resampled (2x) to match\n"
             "the OIII image size. If drizzle is selected, the scale is fixed at 2.0 so the\n"
             "final image sizes will match.\n\n"

@@ -240,7 +240,8 @@ class PaintView(QGraphicsView):
             else:
                 painter.setBrush(QColor(0, 0, 0, 255))
         else:
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            # Keep brush translucency consistent (no alpha buildup from overlapping dabs).
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
             if blur > 0:
                 c     = self.paint_color
                 inner = max(0.0, (radius - blur) / radius)

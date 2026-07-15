@@ -19,11 +19,15 @@ import numpy as np
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QGroupBox, QSlider, QMessageBox, QRadioButton
+    QPushButton, QGroupBox, QSlider, QMessageBox, QRadioButton,
+    QDialog, QLineEdit
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 
-graxpertExecutable = "c:/GraXpert2/GraXpert.exe"
+# Settings keys
+SETTINGS_ORG = "CaribouAstro"
+SETTINGS_APP = "GraXpert"
+DEFAULT_EXE = "C:/GraXpert2/GraXpert.exe"
 
 
 class SirilGraxpertInterface(QWidget):
@@ -36,6 +40,7 @@ class SirilGraxpertInterface(QWidget):
         self.setWindowTitle("GraXpert")
         self.setFixedWidth(380)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
 
         # Initialize Siril connection
         self.siril = s.SirilInterface()
@@ -55,6 +60,27 @@ class SirilGraxpertInterface(QWidget):
         self._enable_apply.connect(self.OnThreadComplete)
         self._close_requested.connect(self.close)
         self.CreateWidgets()
+        self.LoadSettings()
+
+    def LoadSettings(self):
+        """Load settings from QSettings."""
+        s = self.settings
+        self.graxpert_path = s.value("graxpert_path", DEFAULT_EXE)
+        self.smoothing_slider.setValue(int(s.value("smoothing", 25)))
+        self.smoothing_value_label.setText(f"{self.smoothing_slider.value() / 100:.2f}")
+        self.strength_slider.setValue(int(s.value("strength", 80)))
+        self.strength_value_label.setText(f"{self.strength_slider.value() / 100:.2f}")
+
+    def SaveSettings(self):
+        """Save settings to QSettings."""
+        s = self.settings
+        s.setValue("graxpert_path", self.graxpert_path)
+        s.setValue("smoothing", self.smoothing_slider.value())
+        s.setValue("strength", self.strength_slider.value())
+
+    def closeEvent(self, event):
+        self.SaveSettings()
+        super().closeEvent(event)
 
     def CreateWidgets(self):
         """Create the main dialog widgets."""
@@ -132,10 +158,19 @@ class SirilGraxpertInterface(QWidget):
         self.mode_bge_radio.setChecked(True)
 
         button_row = QHBoxLayout()
+        button_row.addStretch()
         self.apply_btn = QPushButton("Apply")
         self.apply_btn.setFixedWidth(80)
         self.apply_btn.clicked.connect(self.OnApply)
         button_row.addWidget(self.apply_btn)
+
+        button_row.addStretch()
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.setFixedWidth(36)
+        self.settings_btn.setFixedHeight(self.apply_btn.sizeHint().height())
+        self.settings_btn.clicked.connect(self.OpenSettings)
+        button_row.addWidget(self.settings_btn)
         layout.addLayout(button_row)
 
     def OnToggleMode(self):
@@ -157,6 +192,10 @@ class SirilGraxpertInterface(QWidget):
         self.progress_timer.start()
         threading.Thread(target=self.ApplyChanges, daemon=True).start()
 
+    def OpenSettings(self):
+        dlg = SettingsDialog(self)
+        dlg.exec()
+  
     def ApplyChanges(self):
         """Run GraXpert denoise in a background thread and load the result into Siril."""
         input_file = ""
@@ -200,7 +239,7 @@ class SirilGraxpertInterface(QWidget):
                     self.siril.log(f"Strength: {denoise_strength:.2f}", s.LogColor.BLUE)
 
                 # run graxpert
-                subprocess.run([graxpertExecutable] + args, check=True, text=True, capture_output=True)
+                subprocess.run([self.graxpert_path] + args, check=True, text=True, capture_output=True)
 
                 # load image back into Siril
                 with fits.open(output_file) as hdul:
@@ -238,7 +277,7 @@ class SirilGraxpertInterface(QWidget):
         if self.apply_btn.isEnabled():
             return
         self.siril.update_progress("GraXpert running...", self.progress)
-        if self.progress < 1.0:
+        if self.progress <= 0.99:
             self.progress = self.progress + 0.01
         else:
             self.progress = 0.1
@@ -247,6 +286,65 @@ class SirilGraxpertInterface(QWidget):
         """Re-enable the apply button after processing is complete."""
         self.progress_timer.stop()
         self.apply_btn.setEnabled(True)
+
+class SettingsDialog(QDialog):
+    """Settings dialog for the Cosmic Clarity Sharpening interface."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedWidth(450)
+        self.settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        location_box = QGroupBox(" Executable Location ")
+        location_layout = QVBoxLayout()
+        location_box.setLayout(location_layout)
+
+        location_row = QHBoxLayout()
+        location_label = QLabel("Path:")
+        location_row.addWidget(location_label)
+        self.location_lineedit = QLineEdit()
+        self.location_lineedit.setFixedHeight(self.location_lineedit.sizeHint().height())
+        self.sharpen_path = self.settings.value("sharpen_path", DEFAULT_EXE)
+        self.location_lineedit.setText(self.sharpen_path)
+        location_row.addWidget(self.location_lineedit, 1)
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(lambda: self.OnSelectFile("sharpen_path", self.location_lineedit))
+        location_row.addWidget(browse_btn)
+        location_layout.addLayout(location_row)
+        layout.addWidget(location_box)
+        layout.addSpacing(10)
+
+        # ok and cancel buttons
+        button_row = QHBoxLayout()
+        button_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.setFixedWidth(80)
+        ok_btn.clicked.connect(self.OnOK)
+        button_row.addWidget(ok_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedWidth(80)
+        cancel_btn.clicked.connect(self.reject)
+        button_row.addWidget(cancel_btn)
+        layout.addLayout(button_row)
+        
+    def OnOK(self):
+        """Handle OK button click."""
+        self.graxpert_path = self.location_lineedit.text().strip()
+        self.settings.setValue("graxpert_path", self.graxpert_path)
+        self.close()
+
+    def OnSelectFile(self, file_attr: str, lineedit: QLineEdit):
+        """Open a file dialog to select a file and update the line edit."""
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "Executable Files (*.exe);;All Files (*)")
+        if file_path:
+            setattr(self, file_attr, file_path)
+            lineedit.setPlainText(file_path)
 
 def main():
     try:

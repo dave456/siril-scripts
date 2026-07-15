@@ -59,7 +59,7 @@ class SirilCosmicClarityInterface(QWidget):
     def LoadSettings(self):
         """Load settings from QSettings and update the UI accordingly."""
         s = self.settings
-        self.sharpen_executable = s.value("sharpen_path", DEFAULT_EXE)
+        self.sharpen_path = s.value("sharpen_path", DEFAULT_EXE)
         self.sharpen_mode.setCurrentIndex(int(s.value("sharpen_mode", 2)))
         self.correction_mode.setCurrentIndex(int(s.value("correction_mode", 0)))
         self.non_stellar_psf_slider.setValue(int(s.value("non_stellar_psf", 30)))
@@ -72,7 +72,7 @@ class SirilCosmicClarityInterface(QWidget):
     def SaveSettings(self):
         """Save a select set of settings via QSettings."""
         s = self.settings
-        s.setValue("sharpen_path", self.sharpen_executable)
+        s.setValue("sharpen_path", self.sharpen_path)
         s.setValue("sharpen_mode", self.sharpen_mode.currentIndex())
         s.setValue("correction_mode", self.correction_mode.currentIndex())
         s.setValue("non_stellar_psf", self.non_stellar_psf_slider.value())
@@ -306,8 +306,8 @@ class SirilCosmicClarityInterface(QWidget):
         if not self.siril.is_image_loaded():
             QMessageBox.critical(self, "Error", "No image loaded!")
             return
-        if not os.path.isfile(self.sharpen_executable):
-            QMessageBox.critical(self, "Error", f"Sharpen executable not found:\n{self.sharpen_executable}")
+        if not os.path.isfile(self.sharpen_path):
+            QMessageBox.critical(self, "Error", f"Sharpen executable not found:\n{self.sharpen_path}")
             return
         self.apply_btn.setEnabled(False)
         threading.Thread(target=lambda: asyncio.run(self.ApplyChanges()), daemon=True).start()
@@ -315,7 +315,6 @@ class SirilCosmicClarityInterface(QWidget):
     def OpenSettings(self):
         dlg = SettingsDialog(self)
         dlg.exec()
-        return
 
     async def RunCosmicClarity(self, inputFile, outputFile):
         """Run Cosmic Clarity"""
@@ -329,7 +328,7 @@ class SirilCosmicClarityInterface(QWidget):
             non_stellar_psf = f"{self.non_stellar_psf_slider.value() / 10:.1f}"
 
             command = [
-                self.sharpen_executable,
+                self.sharpen_path,
                 "cc",
                 "sharpen",
                 f"-i={inputFile}",
@@ -393,7 +392,7 @@ class SirilCosmicClarityInterface(QWidget):
                 error_message = stderr.decode('utf-8', errors='ignore')
                 raise subprocess.CalledProcessError(
                     process.returncode,
-                    self.sharpen_executable,
+                    self.sharpen_path,
                     error_message
                 )
 

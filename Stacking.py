@@ -19,10 +19,15 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QFormLayout, QComboBox, QLabel,
     QCheckBox, QLineEdit, QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
-prefix = "session"
-base_path = "."
+# Settings keys
+SETTINGS_ORG = "CaribouAstro"
+SETTINGS_APP = "StackingWizard"
+
+# Constants
+DIR_PREFIX = "session"
+BASE_PATH = "."
 
 class ProcessingException(Exception):
     """Custom exception for processing errors."""
@@ -66,6 +71,7 @@ class StackingInterface(QWidget):
         self.setWindowTitle("Stacking Wizard")
         self.setFixedWidth(500)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
 
         self.siril = s.SirilInterface()
         try:
@@ -78,6 +84,21 @@ class StackingInterface(QWidget):
 
         self.threadComplete.connect(self.OnThreadComplete)
         self.CreateWidgets()
+        self.LoadSettings()
+
+    def LoadSettings(self):
+        """Load settings from QSettings and update the UI accordingly."""
+        s = self.settings
+        self.synthetic_bias_edit.setText(s.value("synthetic_bias", ""))
+    
+    def SaveSettings(self):
+        """Save a select set of settings via QSettings."""
+        s = self.settings
+        s.setValue("synthetic_bias", self.synthetic_bias_edit.text().strip())
+    
+    def closeEvent(self, event):
+        self.SaveSettings()
+        super().closeEvent(event)
 
     def CreateWidgets(self):
         layout = QVBoxLayout()
@@ -135,6 +156,18 @@ class StackingInterface(QWidget):
         layout.addWidget(method_box)
         self.drizzle_radio.toggled.connect(self.OnDrizzleToggled)
 
+        # bias settings group box
+        bias_box = QGroupBox(" Bias Settings ")
+        bias_layout = QFormLayout()
+        bias_box.setLayout(bias_layout)
+        bias_box.setContentsMargins(8, 23, 8, 13)
+
+        self.synthetic_bias_edit = QLineEdit()
+        self.synthetic_bias_edit.setToolTip("Siril expression for synthetic bias. If not specified, bias will be computed from subs.")
+        self.synthetic_bias_edit.setText("")
+        bias_layout.addRow("Synthetic Bias:", self.synthetic_bias_edit)
+        layout.addWidget(bias_box)
+
         # pixel rejection settings group box
         rejection_box = QGroupBox(" Pixel Rejection ")
         rejection_layout = QFormLayout()
@@ -143,6 +176,7 @@ class StackingInterface(QWidget):
 
         # combo box for rejection method selection
         self.rejection_combo = QComboBox()
+        self.rejection_combo.setToolTip("Method for rejecting outlier pixels during stacking.")
         for method in self.rejectionMethods.keys():
             self.rejection_combo.addItem(method)
         self.rejection_combo.setCurrentText("Winsorized Sigma Clipping")
@@ -193,24 +227,23 @@ class StackingInterface(QWidget):
         sigma_row.addLayout(sigma_controls)
         rejection_layout.addRow(sigma_row)
 
-        # checkbox for creating rejection maps
-        self.create_rejection_maps_checkbox = QCheckBox("Create Rejection Maps")
-        rejection_layout.addRow(self.create_rejection_maps_checkbox)
-        layout.addWidget(rejection_box)
-
-        # pixel rejection weighting group box
-        weighting_box = QGroupBox(" Rejection Weighting ")
-        weighting_layout = QFormLayout()
-        weighting_box.setLayout(weighting_layout)
-        weighting_box.setContentsMargins(8, 23, 8, 13)
-
         # pixel rejection weighting methods
+        spacer = QWidget()
+        spacer.setFixedHeight(5)
+        rejection_layout.addRow(spacer)
         self.weighting_combo = QComboBox()
+        self.weighting_combo.setToolTip("Choose how Siril weights frames during rejection and stacking.")
         for method in self.weightingMethods.keys():
             self.weighting_combo.addItem(method)
         self.weighting_combo.setCurrentText("Weighted FWHM")
-        weighting_layout.addRow("Method:", self.weighting_combo)
-        layout.addWidget(weighting_box)
+        self.weighting_combo.setFixedWidth(190)
+        rejection_layout.addRow(self.weighting_combo)
+
+        # checkbox for creating rejection maps
+        rejection_layout.addRow(spacer)
+        self.create_rejection_maps_checkbox = QCheckBox("Create Rejection Maps")
+        rejection_layout.addRow(self.create_rejection_maps_checkbox)
+        layout.addWidget(rejection_box)
 
         # output file options group box
         output_box = QGroupBox(" Output Options ")
@@ -311,33 +344,34 @@ class StackingInterface(QWidget):
         help_text = (
             "This wizard will stack images from single or multiple nights of imaging. It uses\n"
             "the same directory layout that the default OSC stacking scripts use, specifically,\n"
-            "lights, darks, flats and masters.\n\n"
+            "lights, darks, biases, flats and masters.\n\n"
             "For multi-night stacking, the sessions should be placed in directories starting\n"
             "with the keyword 'session'. Separate darks and flats may be used for each\n"
             "session. All pre-processed lights will be merged and stacked from the top \n"
-            "level directory."
+            "level process directory."
         )
         _msg = QMessageBox(QMessageBox.Icon.Information, "Help", help_text, QMessageBox.StandardButton.Ok, self)
         ShowMsgBox(_msg)
 
     def OnClean(self):
+        """Clean up process directories"""
         session_dirs = [
-            entry for entry in sorted(os.listdir(base_path))
-            if os.path.isdir(os.path.join(base_path, entry)) and entry.startswith(prefix)
+            entry for entry in sorted(os.listdir(BASE_PATH))
+            if os.path.isdir(os.path.join(BASE_PATH, entry)) and entry.startswith(DIR_PREFIX)
         ]
         is_single_session = bool(
-            os.path.isdir(os.path.join(base_path, "lights")) and
-            os.path.isdir(os.path.join(base_path, "masters")) and
+            os.path.isdir(os.path.join(BASE_PATH, "lights")) and
+            os.path.isdir(os.path.join(BASE_PATH, "masters")) and
             not session_dirs
         )
 
         dirs_to_clean = []
-        top_process = os.path.join(base_path, "process")
+        top_process = os.path.join(BASE_PATH, "process")
         if os.path.isdir(top_process):
             dirs_to_clean.append(top_process)
         if not is_single_session:
             for entry in session_dirs:
-                session_process = os.path.join(base_path, entry, "process")
+                session_process = os.path.join(BASE_PATH, entry, "process")
                 if os.path.isdir(session_process):
                     dirs_to_clean.append(session_process)
 
@@ -375,7 +409,25 @@ class StackingInterface(QWidget):
         else:
             self.siril.log("Lights sequence found - skipping conversion.", s.LogColor.BLUE)
 
-    def ProcessFlats(self, syntheticBias="=64*$OFFSET", subdir=".", force=False):
+    def ProcessBiases(self, subdir=".", force=False):
+        """Process biases"""
+        if self.synthetic_bias_edit.text().strip():
+            self.bias = self.synthetic_bias_edit.text().strip()
+            self.siril.log(f"Using synthetic bias: {self.bias}", s.LogColor.BLUE)
+            return
+        if not isFitsFile(f"{subdir}/masters", "bias_stacked") or force:
+            self.siril.log(f"checking for biases in {subdir}/biases...")
+            if not os.path.isdir(f"{subdir}/biases"):
+                raise ProcessingException("No master_bias or unprocessed biases found!")
+            self.siril.log("Stacking biases...", s.LogColor.BLUE)
+            self.siril.cmd("cd", "biases")
+            self.siril.cmd("convert", "bias", "-out=../process")
+            self.siril.cmd("cd", "../process")
+            self.siril.cmd("stack", "bias", "rej", "3", "3", "-nonorm", "-out=../masters/bias_stacked")
+            self.siril.cmd("cd", "..")
+            self.bias = "../masters/bias_stacked"
+
+    def ProcessFlats(self, bias="", subdir=".", force=False):
         """Process flats"""
         if not isFitsFile(f"{subdir}/masters", "flat_stacked") or force:
             self.siril.log(f"checking for flats in {subdir}/flats...")
@@ -385,10 +437,9 @@ class StackingInterface(QWidget):
             self.siril.cmd("cd", "flats")
             self.siril.cmd("convert", "flat", "-out=../process")
             self.siril.cmd("cd", "../process")
-            self.siril.cmd("calibrate", "flat", f"-bias=\"{syntheticBias}\"")
+            self.siril.cmd("calibrate", "flat", f"-bias=\"{bias}\"")
             self.siril.cmd("stack", "flat", "rej", "3", "3", "-norm=mul", "-out=../masters/flat_stacked")
             self.siril.cmd("cd", "..")
-        return
 
     def ProcessDarks(self, subdir=".", force=False):
         """Process darks"""
@@ -402,7 +453,6 @@ class StackingInterface(QWidget):
             self.siril.cmd("cd", "../process")
             self.siril.cmd("stack", "dark", "rej", "3", "3", "-nonorm", "-out=../masters/dark_stacked")
             self.siril.cmd("cd", "..")
-        return
 
     def CalibrateLights(self, use_drizzle, subdir=".", force=False):
         """Calibrate lights"""
@@ -453,22 +503,23 @@ class StackingInterface(QWidget):
 
             # collect a list of session directory that match our prefix
             session_dirs = []
-            for subdir in sorted(os.listdir(base_path)):
-                full_path = os.path.join(base_path, subdir)
-                if os.path.isdir(full_path) and subdir.startswith(prefix):
+            for subdir in sorted(os.listdir(BASE_PATH)):
+                full_path = os.path.join(BASE_PATH, subdir)
+                if os.path.isdir(full_path) and subdir.startswith(DIR_PREFIX):
                     session_dirs.append(subdir)
 
             # kind of hacky logic to determine if this is a single-session or not
-            if os.path.isdir(os.path.join(base_path, "lights")) and not session_dirs:
+            if os.path.isdir(os.path.join(BASE_PATH, "lights")) and not session_dirs:
                 self.siril.log("Detected single-session folder structure.", s.LogColor.BLUE)
                 self.ProcessDarks()
-                self.ProcessFlats()
+                self.ProcessBiases()
+                self.ProcessFlats(bias=self.bias)
                 self.ProcessLights()
                 self.CalibrateLights(use_drizzle=useDrizzle)
             else:
                 # sanity check to just bail if we have nothing
                 if not session_dirs:
-                    raise ProcessingException(f"No session directories found with prefix '{prefix}', and no top-level lights/masters structure detected.")
+                    raise ProcessingException(f"No session directories found with prefix '{DIR_PREFIX}', and no top-level lights/masters structure detected.")
                 
                 self.siril.log("Detected multi-session folder structure.", s.LogColor.BLUE)
 
@@ -479,7 +530,8 @@ class StackingInterface(QWidget):
 
                     self.siril.cmd("cd", f"{subdir}")
                     self.ProcessDarks(subdir=subdir)
-                    self.ProcessFlats(subdir=subdir)
+                    self.ProcessBiases(subdir=subdir)
+                    self.ProcessFlats(bias=self.bias, subdir=subdir)
                     self.ProcessLights(subdir=subdir)
                     self.CalibrateLights(use_drizzle=useDrizzle, subdir=subdir)
                     self.siril.cmd("cd", "..")

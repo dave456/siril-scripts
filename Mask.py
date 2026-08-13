@@ -421,6 +421,12 @@ class MaskPainterDialog(QDialog):
         tb.addWidget(btn_fit)
 
         tb.addSpacing(16)
+        self._chk_autostretch = QCheckBox("Autostretch")
+        self._chk_autostretch.setChecked(True)
+        self._chk_autostretch.toggled.connect(lambda _: self._load_image())
+        tb.addWidget(self._chk_autostretch)
+
+        tb.addSpacing(16)
         btn_clear = QPushButton("Clear")
         btn_clear.clicked.connect(lambda: self._view.clear_mask())
         tb.addWidget(btn_clear)
@@ -447,7 +453,16 @@ class MaskPainterDialog(QDialog):
         self._tool_btns = (self._btn_brush, self._btn_eraser, self._btn_lasso)
 
     def _load_image(self) -> None:
-        uint8 = _autostretch_for_display(self._image_data)
+        if self._chk_autostretch.isChecked():
+            uint8 = _autostretch_for_display(self._image_data)
+        else:
+            data = self._image_data
+            if data.ndim == 3:
+                rgb = np.moveaxis(data, 0, -1).astype(np.float32)
+                rgb = np.repeat(rgb, 3, axis=2) if rgb.shape[2] == 1 else rgb[:, :, :3]
+            else:
+                rgb = np.stack([data, data, data], axis=-1).astype(np.float32)
+            uint8 = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
         # FITS row 0 = bottom; flip so Qt displays it the right way up
         display = np.ascontiguousarray(np.flipud(uint8))
         h, w, _ = display.shape
@@ -931,12 +946,12 @@ class MaskWindow(QWidget):
             # Planes-first: expand mask to match channels dimension
             # mask is (H, W), expand to (1, H, W)
             mask_expanded = mask[np.newaxis, :, :]
-            if not self.invert_checkbox.isChecked():
+            if self.invert_checkbox.isChecked():
                 mask_expanded = 1.0 - mask_expanded
             result = current * mask_expanded + previous * (1 - mask_expanded)
         else:
             # 2D case
-            if not self.invert_checkbox.isChecked():
+            if self.invert_checkbox.isChecked():
                 mask = 1.0 - mask
             result = current * mask + previous * (1 - mask)
         

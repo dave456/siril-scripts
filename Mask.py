@@ -98,7 +98,7 @@ class PaintView(QGraphicsView):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.brush_size = 50
+        self.brush_size = 150
         self.tool_mode = 'brush'
         self.is_drawing = False
         self.is_space_held = False
@@ -387,10 +387,10 @@ class MaskPainterDialog(QDialog):
         tb.addSpacing(20)
         tb.addWidget(QLabel("Brush Size:"))
         self._slider_size = QSlider(Qt.Orientation.Horizontal)
-        self._slider_size.setRange(5, 300)
-        self._slider_size.setValue(50)
+        self._slider_size.setRange(5, 500)
+        self._slider_size.setValue(150)
         self._slider_size.setFixedWidth(160)
-        self._lbl_size = QLabel("50px")
+        self._lbl_size = QLabel("150px")
         self._lbl_size.setFixedWidth(40)
         self._slider_size.valueChanged.connect(self._on_brush_size_changed)
         tb.addWidget(self._slider_size)
@@ -670,12 +670,13 @@ class MaskWindow(QWidget):
         help_text = (
             "This utility allows you to apply a mask to blend the current image with the previous state from the undo stack.\n\n"
             "1. Load an image in Siril and make some adjustments, e.g. denoise, curves, etc.\n"
-            "2. Click 'Create' to create a mask from the existing image.\n"
-            "3. Click 'Select' to choose an existing mask file (FITS or TIFF format).\n"
+            "2. Optionally click 'Create' to create a mask from the existing image.\n"
+            "3. Click 'Select' to choose an existing mask file (FITS or TIFF format). If you created one it is selected.\n"
             "4. Optionally invert the mask if desired.\n"
             "5. Click 'Mask' to apply the blending operation.\n\n"
             "The result will be a blend of the current and previous images based on the mask, and will be added to the undo stack "
-            "for further adjustments if needed.\n\n"
+            "for further adjustments if needed. While create will simply create a black and white mask file, using other tools "
+            "to create masks allows the ability to create grayscale masks to further tweak blending.\n\n"
             "Note: Plate solved images may be flipped in Siril, resulting in an incorrect orientation of the mask when exported "
             "as anything other than FITS. If you export as TIFF and edit in another application this orientation information is lost, "
             "so you may need to experiment with flipping it in an external editor if the result looks wrong."

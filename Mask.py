@@ -30,10 +30,43 @@ from PyQt6.QtWidgets import (
     QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsPathItem,
     QGraphicsEllipseItem, QSlider, QLabel,
+    QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QCursor, QPainterPath, QRadialGradient, QBrush
 from astropy.io import fits
+
+HELP_TEXT = """
+<html><body style="font-size:10pt;">
+<p>This utility allows you to apply a mask to blend the current image with the 
+previous image in the undo stack. This effectively allows you to mask any
+operation within Siril that uses the undo state.</p>
+
+<p>To mask an operation you must first perform the operation that you wish to
+mask, and then select or create the mask you wish to use.</p>
+
+</p>The mask should be a single-channel grayscale image where pixel values 
+where white (1.0) indicate areas to take from the current image, and black 
+(0.0) indicate areas to take from the previous image, with values in between 
+blending the two.</p>
+
+<p>To create a mask you can use the 'Create' button to open an interactive 
+mask painter. This will allow you to paint a mask over the current image, 
+and save it as a TIFF file.</p>
+
+<p>Masks can be created using the luminance data of the image, the R, G or B 
+channels as well as many other methods. You are only limited by your own
+creativity.</p>
+
+<p>Finally, the 'Invert mask' checkbox allows you to invert the mask so 
+that white areas are taken from the previous image and black areas are
+taken from the current image.</p>
+
+<p>Once you have selected or created a mask, you can click the 'Mask' 
+button to apply it to the current image. This operation uses the undo
+state so you may compare the result with the previous image.</p>
+</body></html>
+"""
 
 
 # ------------------------------------------------------------------------------
@@ -651,9 +684,10 @@ class MaskWindow(QWidget):
             self.mask_line.setText(os.path.basename(dlg.saved_path))
             self.mask_btn.setEnabled(True)
             self.siril.log(f"Mask saved: {dlg.saved_path}", s.LogColor.GREEN)
+
     def OnSelectMask(self):
         """Open file dialog to select mask file"""
-        # prefer tiff because that's what I use for masking
+        # prefer tiff because its ideal for masking, but we will allow fits too
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             "Select mask file", 
@@ -667,21 +701,16 @@ class MaskWindow(QWidget):
 
     def ShowHelp(self):
         """Show help message box"""
-        help_text = (
-            "This utility allows you to apply a mask to blend the current image with the previous state from the undo stack.\n\n"
-            "1. Load an image in Siril and make some adjustments, e.g. denoise, curves, etc.\n"
-            "2. Optionally click 'Create' to create a mask from the existing image.\n"
-            "3. Click 'Select' to choose an existing mask file (FITS or TIFF format). If you created one it is selected.\n"
-            "4. Optionally invert the mask if desired.\n"
-            "5. Click 'Mask' to apply the blending operation.\n\n"
-            "The result will be a blend of the current and previous images based on the mask, and will be added to the undo stack "
-            "for further adjustments if needed. While create will simply create a black and white mask file, using other tools "
-            "to create masks allows the ability to create grayscale masks to further tweak blending.\n\n"
-            "Note: Plate solved images may be flipped in Siril, resulting in an incorrect orientation of the mask when exported "
-            "as anything other than FITS. If you export as TIFF and edit in another application this orientation information is lost, "
-            "so you may need to experiment with flipping it in an external editor if the result looks wrong."
-        )
-        QMessageBox.information(self, "Help - Image Masking Utility", help_text)
+        box = QMessageBox(self)
+        box.setWindowTitle(f"Image Masking Utility Help")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(HELP_TEXT)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        button_box = box.findChild(QDialogButtonBox)
+        if button_box:
+            button_box.setCenterButtons(True)
+        box.setMinimumWidth(480)
+        box.exec()
 
     def OnMask(self):
         """Apply masking operation"""

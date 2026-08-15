@@ -21,6 +21,22 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
+HELP_TEXT = """
+<html><body style="font-size:10pt;">
+<p>This wizard will stack images from single or multiple nights of imaging.
+It uses the same directory layout that the default OSC stacking scripts use, 
+specifically, <b><i>lights, darks, biases, flats</i></b> and <b><i>masters</i></b>.</p>
+
+<p>For multi-night stacking, the sessions should be placed in directories starting 
+with the keyword <b><i>session</i></b>. Separate darks and flats may be used for 
+each session. All pre-processed lights will be merged and stacked from the top level
+process directory.</p>    
+
+<p>If a synthetic bias is specified, it will be used for all sessions. Otherwise, the
+bias will be computed from the biases found in each session.</p>
+</body></html>
+"""
+
 # Settings keys
 SETTINGS_ORG = "CaribouAstro"
 SETTINGS_APP = "StackingWizard"
@@ -341,17 +357,17 @@ class StackingInterface(QWidget):
         threading.Thread(target=self.ExecuteStacking, daemon=True).start()
 
     def OnHelp(self):
-        help_text = (
-            "This wizard will stack images from single or multiple nights of imaging. It uses\n"
-            "the same directory layout that the default OSC stacking scripts use, specifically,\n"
-            "lights, darks, biases, flats and masters.\n\n"
-            "For multi-night stacking, the sessions should be placed in directories starting\n"
-            "with the keyword 'session'. Separate darks and flats may be used for each\n"
-            "session. All pre-processed lights will be merged and stacked from the top \n"
-            "level process directory."
-        )
-        _msg = QMessageBox(QMessageBox.Icon.Information, "Help", help_text, QMessageBox.StandardButton.Ok, self)
-        ShowMsgBox(_msg)
+        """Show help message box"""
+        box = QMessageBox(self)
+        box.setWindowTitle(f"Stacking Wizard Help")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(HELP_TEXT)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        button_box = box.findChild(QDialogButtonBox)
+        if button_box:
+            button_box.setCenterButtons(True)
+        box.setMinimumWidth(480)
+        box.exec()
 
     def OnClean(self):
         """Clean up process directories"""

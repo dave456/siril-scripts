@@ -24,8 +24,8 @@ user-selected region using AAD (Average Absolute Deviation).
 # 3.0.4 Allow user to not select a region and use whole image with warning
 # 3.0.5 CR: Reduce vertical spacing for more compact interface
 # 3.0.6 Copy FITS header to generated files, add history entry for CS operation
-# 3.0.7 Get rid of the FUGLY collasible widgets
-
+# 3.0.7 Fix issue with loading emission file, and add check for file existence before loading
+# 3.0.8 Tighten GUI layout, add help button, and add help text for user guidance
 
 import sirilpy as s
 s.ensure_installed("PyQt6")
@@ -42,14 +42,47 @@ import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox, QSlider,
-    QTextEdit, QComboBox, QMainWindow
+    QTextEdit, QComboBox, QMainWindow, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from astropy.io import fits
 from scipy.optimize import curve_fit
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-version = "v3.0.6"
+VERSION = "v3.0.8"
+
+HELP_TEXT = """
+<html><body style="font-size:10pt;">
+<p>Continuum subtraction is a technique used to isolate emission lines by removing 
+the contribution of the continuum light from one of the emission lines of the
+narrowband data. This continuum subtracted image can then be recombined with RGB
+data to emphasize the emission nebula often found in galaxies.</p>
+<p>Typically this involves using the Ha data and the R channel data to remove 
+the continuum contribution from the Ha emission line, although it can also be
+used on other emission lines as well.</p>
+<p>To use this tool:
+<ul>
+<li>In the components section, select the appropriate files for the R, G, B channels 
+and the emission line data you will be using.</li>
+<li>In the continuum subtraction section, select the emission line to operate on from 
+the drop-down menu.</li>
+<li>Click the <b>Load</b> button to load the selected emission line data into Siril.</li>
+<li>In the Siril image window, you may optionally select a region of the image 
+that contains the object of interest. If no region is selected, the entire image
+will be used for the estimation.</li>
+<li>Click the <b>Estimate</b> button to compute the optimal scaling factor for continuum 
+subtraction. The script will automatically generate the continuum-subtracted image 
+and load it into Siril.</li>
+<li>Optionally adjust the <b>c</b> slider to fine-tune the subtraction and click 
+<b>Generate</b> to regenerate the continuum-subtracted image.</li>
+<li>In the blending section, adjust the <b>Strength (q)</b> slider to control the 
+contribution of the continuum-subtracted image to the final RGB blend.</li>
+<li>Adjust the Red, Green, and Blue sliders to control the contribution of each
+color channel.</li>
+<li>Click the <b>Blend</b> button to generate the final blended RGB image.</li>
+</ul>
+</body></html>
+"""
 
 def _siril_quoted_path(path: str) -> str:
     """Quote a filesystem path for Siril command parsing."""
@@ -90,7 +123,7 @@ class SirilCSWindow(QWidget):
     def __init__(self):
         """ Constructor for our UI class """
         super().__init__()
-        self.setWindowTitle(f"Continuum Subtraction {version}")
+        self.setWindowTitle(f"Continuum Subtraction {VERSION}")
         self.setFixedWidth(660)
 
         # Siril connection
@@ -127,43 +160,9 @@ class SirilCSWindow(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        about_group = CollapsibleGroup("ℹ️ About  ►")
-        about_group.toggle.setChecked(False)  # start collapsed
-        about_layout = about_group.content.layout()
-        about_layout.setContentsMargins(8, 4, 8, 4)
-
-        desc = QTextEdit()
-        desc.setReadOnly(True)
-        desc.setHtml(
-            "<b>Continuum Subtraction and Blending Tool</b><br><br>"
-            "This tool allows you to generate a continuum-subtracted image "
-            "and blend it with RGB channels to create a final image. Select the desired "
-            "component files, adjust the parameters, generate the continuum subtracted image, "
-            "and apply the blend.<br><br>"
-            "To compute the ideal continuum scaling factor <i>c</i>. Load the corresponding "
-            "emission component into Siril via 'Load'. Select a region in the image "
-            "in Siril that contains the primary subject matter, then click 'Estimate'. "
-            "Alternatively, set <i>c</i> manually using the slider. Click 'Generate' to create and view the "
-            "continuum-subtracted image.<br><br>" 
-            "<i>Note:</i> Ensure that the component FITS files are aligned, unstretched and in "
-            "32-bit float format for best results."
-        )
-        desc.setFixedHeight(120)
-        desc.setStyleSheet("background: transparent; border: none;")
-        about_layout.addWidget(desc)
-        layout.addWidget(about_group)
-
         # Components selection group
-        #comps_group = CollapsibleGroup("Components  ▼")
-        #comps_layout = comps_group.content.layout()
-        #comps_layout.setContentsMargins(8, 4, 8, 4)
-        #comps_layout.setSpacing(6)
-
-        # create a box for our columns
         comps_box = QGroupBox(" Components ")
         comps_box.setLayout(QHBoxLayout())
-        #comps_group.content.layout().addWidget(comps_box)
-
         left_col = QVBoxLayout()
         left_col.setSpacing(3)
         right_col = QVBoxLayout()
@@ -221,39 +220,29 @@ class SirilCSWindow(QWidget):
         layout.addSpacing(10)
 
         # CS generation group
-        #csgen_group = CollapsibleGroup("Continuum Subtraction Generation  ▼")
-        #csgen_layout = csgen_group.content.layout()
-        #csgen_layout.setContentsMargins(8, 4, 8, 4)
-        #csgen_layout.setSpacing(6)
-        
-        # create a box for the components
         csgen_box = QGroupBox(" Continuum Subtraction Generation ")
         csgen_box.setLayout(QVBoxLayout())
-        #csgen_group.content.layout().addWidget(csgen_box)
 
         # drop-down to select which emission line to operate on
-        self.emission_desc = QLabel("Emission Line Selection")
-        csgen_box.layout().addWidget(self.emission_desc)
-
+        emission_row = QHBoxLayout()
+        emission_desc = QLabel("Emission Line Selection: ")
+        emission_desc.setFixedWidth(130)
+        emission_row.addWidget(emission_desc)
         self.emission_combo = QComboBox()
         self.emission_combo.addItems(["Ha", "SII", "OIII"])
         self.emission_combo.setCurrentIndex(0) # default to Ha
         self.emission_combo.setFixedWidth(70)
         self.emission_combo.currentTextChanged.connect(self.on_emission_changed)
-        csgen_box.layout().addWidget(self.emission_combo)
+        emission_row.addWidget(self.emission_combo)
+        emission_row.addStretch()
+        csgen_box.layout().addLayout(emission_row)
 
-        # load and estimate buttons
-        btn_row = QHBoxLayout()
-        load_btn = QPushButton("Load")
-        load_btn.clicked.connect(self.on_load)
-        estimate_btn = QPushButton("Estimate")
-        estimate_btn.clicked.connect(self.on_estimate)
+        # plot solution checkbox
+        plot_row = QHBoxLayout()
         self.plot_check_box = QCheckBox("Plot Solution")
-        btn_row.addWidget(load_btn)
-        btn_row.addWidget(estimate_btn)
-        btn_row.addWidget(self.plot_check_box)
-        btn_row.addStretch()
-        csgen_box.layout().addLayout(btn_row)
+        plot_row.addWidget(self.plot_check_box)
+        plot_row.addStretch()
+        csgen_box.layout().addLayout(plot_row)
         csgen_box.layout().addSpacing(10)  
 
         # c constant continuum slider
@@ -269,29 +258,28 @@ class SirilCSWindow(QWidget):
         csgen_box.layout().addLayout(c_row)
         csgen_box.layout().addSpacing(5)
         
-        # generate button
-        gen_btn_row = QHBoxLayout()
-        gen_btn_row.setAlignment(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter)
+        # button row
+        btn_row = QHBoxLayout()
+        btn_row.setAlignment(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter)
+        load_btn = QPushButton("Load")
+        load_btn.clicked.connect(self.on_load)
+        btn_row.addWidget(load_btn)
+        estimate_btn = QPushButton("Estimate")
+        estimate_btn.clicked.connect(self.on_estimate)
+        btn_row.addWidget(estimate_btn)
         gen_btn = QPushButton("Generate")
         gen_btn.clicked.connect(self.on_generate)
         gen_btn.setFixedWidth(80)
-        gen_btn_row.addWidget(gen_btn)
-        csgen_box.layout().addLayout(gen_btn_row)
+        btn_row.addWidget(gen_btn)
+        csgen_box.layout().addLayout(btn_row)
 
         # add the group to main layout
         layout.addWidget(csgen_box)
         layout.addSpacing(10)
 
         # Blending group
-        #blend_group = CollapsibleGroup("Blending Options  ▼")
-        #blend_layout = blend_group.content.layout()
-        #blend_layout.setContentsMargins(8, 4, 8, 4)
-        #blend_layout.setSpacing(6)
-
-        # create a box for the components
         blend_box = QGroupBox(" Blending Options ")
         blend_box.setLayout(QVBoxLayout())
-        #blend_group.content.layout().addWidget(blend_box)
 
         # q strength slider (determines Ha contribution to final image)
         q_row = QHBoxLayout()
@@ -366,8 +354,14 @@ class SirilCSWindow(QWidget):
         blend_btn.clicked.connect(self.on_blend)
         blend_btn.setFixedWidth(80)
         blend_btn_row.addWidget(blend_btn)
-        blend_box.layout().addLayout(blend_btn_row)
 
+        help_btn = QPushButton("Help")
+        help_btn.clicked.connect(self.on_help)
+        help_btn.setFixedWidth(80)
+        blend_btn_row.addWidget(help_btn)
+        
+        blend_box.layout().addLayout(blend_btn_row)
+        
         layout.addWidget(blend_box)
 
     def add_file_row(self, label_text, lineedit, label_width):
@@ -382,6 +376,19 @@ class SirilCSWindow(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
         return row, btn
+
+    def on_help(self):
+        """Show help message box"""
+        box = QMessageBox(self)
+        box.setWindowTitle(f"Continuum Subtraction Help")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(HELP_TEXT)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        button_box = box.findChild(QDialogButtonBox)
+        if button_box:
+            button_box.setCenterButtons(True)
+        box.setMinimumWidth(600)
+        box.exec()
     
     def on_load(self):
         """ Load button callback. Load the selected emission line component into Siril so the user can select a region """

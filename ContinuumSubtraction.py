@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QMessageBox, QGroupBox, QCheckBox, QSlider,
-    QTextEdit, QComboBox, QMainWindow, QDialogButtonBox
+    QComboBox, QMainWindow, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from astropy.io import fits

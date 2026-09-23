@@ -93,7 +93,7 @@ class StackingInterface(QWidget):
         radio_layout = QHBoxLayout()
         self.ha_interpolation = QRadioButton("Interpolate")
         self.ha_drizzle = QRadioButton("Drizzle")
-        self.ha_drizzle.setChecked(True)
+        self.ha_interpolation.setChecked(True)
         radio_layout.addWidget(self.ha_interpolation)
         radio_layout.addWidget(self.ha_drizzle)
         method_layout.addLayout(radio_layout)
@@ -103,7 +103,7 @@ class StackingInterface(QWidget):
         self.ha_scale_spin = QDoubleSpinBox()
         self.ha_scale_spin.setDecimals(1)
         self.ha_scale_spin.setRange(1.0, 4.0)
-        self.ha_scale_spin.setValue(2.0)
+        self.ha_scale_spin.setValue(1.0)
         self.ha_scale_spin.setSingleStep(0.5)
         self.ha_scale_spin.setEnabled(False)
         ha_drizzle_layout.addRow("Scale (fixed):", self.ha_scale_spin)
@@ -111,9 +111,9 @@ class StackingInterface(QWidget):
         self.ha_pixfrac_spin = QDoubleSpinBox()
         self.ha_pixfrac_spin.setDecimals(2)
         self.ha_pixfrac_spin.setRange(0.01, 1.0)
-        self.ha_pixfrac_spin.setValue(0.85)
+        self.ha_pixfrac_spin.setValue(0.95)
         self.ha_pixfrac_spin.setSingleStep(0.05)
-        self.ha_pixfrac_spin.setEnabled(True)       
+        self.ha_pixfrac_spin.setEnabled(False)       
         ha_drizzle_layout.addRow("Pixel Fraction:", self.ha_pixfrac_spin)
         method_layout.addLayout(ha_drizzle_layout)
 
@@ -127,7 +127,7 @@ class StackingInterface(QWidget):
             "Lanczos3",
         ])
         self.ha_drizzle_method.setCurrentText("Square")
-        self.ha_drizzle_method.setEnabled(True)
+        self.ha_drizzle_method.setEnabled(False)
         ha_drizzle_layout.addRow("Kernel:", self.ha_drizzle_method)
         self.ha_drizzle.toggled.connect(self.OnHaDrizzleToggled)
 
@@ -150,7 +150,7 @@ class StackingInterface(QWidget):
         self.oiii_scale_spin = QDoubleSpinBox()
         self.oiii_scale_spin.setDecimals(1)
         self.oiii_scale_spin.setRange(1.0, 4.0)
-        self.oiii_scale_spin.setValue(2.0)
+        self.oiii_scale_spin.setValue(1.0)
         self.oiii_scale_spin.setSingleStep(0.5)
         self.oiii_scale_spin.setEnabled(False)
         oiii_drizzle_layout.addRow("Scale:", self.oiii_scale_spin)
@@ -158,7 +158,7 @@ class StackingInterface(QWidget):
         self.oiii_pixfrac_spin = QDoubleSpinBox()
         self.oiii_pixfrac_spin.setDecimals(2)
         self.oiii_pixfrac_spin.setRange(0.01, 1.0)
-        self.oiii_pixfrac_spin.setValue(0.75)
+        self.oiii_pixfrac_spin.setValue(0.95)
         self.oiii_pixfrac_spin.setSingleStep(0.05)
         self.oiii_pixfrac_spin.setEnabled(False)       
         oiii_drizzle_layout.addRow("Pixel Fraction:", self.oiii_pixfrac_spin)
@@ -336,6 +336,7 @@ class StackingInterface(QWidget):
 
     def OnHaDrizzleToggled(self, checked):
         """toggle the spin boxes for Ha drizzle on/off settings"""
+        self.ha_scale_spin.setEnabled(checked)
         self.ha_pixfrac_spin.setEnabled(checked)
         self.ha_drizzle_method.setEnabled(checked)
 
@@ -560,7 +561,7 @@ class StackingInterface(QWidget):
             # extract the Ha and OIII channels from the pre-processed sequence
             if not os.path.isfile(f"./process/Ha_pp_light_.seq") and not os.path.isfile(f"./process/OIII_pp_light_.seq"):
                 self.siril.cmd("cd", "process")
-                self.siril.cmd("seqextract_HaOIII", "pp_light")
+                self.siril.cmd("seqextract_HaOIII", "pp_light", "-resample=ha")
                 self.siril.cmd("cd", "..")
             else:
                 self.siril.log("Ha and OIII sequences found, skipping extraction.", s.LogColor.BLUE)
@@ -580,6 +581,7 @@ class StackingInterface(QWidget):
                           self.oiii_drizzle_method.currentText())
             
             # final stacking
+            seqnum = 1
             self.siril.cmd("cd", "process")
             for channel in ["Ha", "OIII"]:
                 # build the stacking command
@@ -613,33 +615,26 @@ class StackingInterface(QWidget):
 
                 # miscellaneous other flags that are fixed (for now)
                 stacking_args.append("-32b")
-                stacking_args.append(f"-out=../{channel}_{self.outfile_name.text()}")
+                #stacking_args.append(f"-out={channel}_{self.outfile_name.text()}")
+                stacking_args.append(f"-out=align_{seqnum:04d}")
 
                 # run the stacking command in siril and open the result
                 self.siril.cmd("stack", *stacking_args)
+                seqnum += 1
 
-                # if we used interpolation on the Ha channel we need to resample it up so its the same
-                # size as the OIII channel
-                if channel == "Ha" and self.ha_interpolation.isChecked():
-                    self.siril.cmd("cd", "..")
-                    self.siril.cmd("load", f"{channel}_{self.outfile_name.text()}")
-                    self.siril.cmd("resample", "2")
-                    self.siril.cmd("save", f"{channel}_{self.outfile_name.text()}")
-                    self.siril.cmd("close")
-                    self.siril.cmd("cd", "process")
-
-                # if we used drizzle with a scale greater than 1.0 on the OIII channel we need to resample 
-                # it down to match the Ha channel
-                if channel == "OIII" and self.oiii_drizzle.isChecked() and self.oiii_scale_spin.value() > 1.0:
-                    self.siril.cmd("cd", "..")
-                    self.siril.cmd("load", f"{channel}_{self.outfile_name.text()}")
-                    resample_factor = 1.0 / self.oiii_scale_spin.value()
-                    self.siril.cmd("resample", f"{resample_factor}")
-                    self.siril.cmd("save", f"{channel}_{self.outfile_name.text()}")
-                    self.siril.cmd("close")
-                    self.siril.cmd("cd", "process")
-
+            # align our final results (always align)
+            file_path = os.path.join("process", "r_align_.seq")
+            if os.path.isfile(file_path):
+                os.remove(file_path)
             self.siril.cmd("cd", "..")
+            self.Register("align", False, 0, 0, "")
+
+            # move them into the output directory
+            seqnum = 1
+            for channel in ["Ha", "OIII"]:
+                shutil.move(f"process/r_align_{seqnum:04d}.fits", f"{channel}_{self.outfile_name.text()}.fits")
+                seqnum += 1
+
             # load the Ha channel \o/
             self.siril.cmd("load", f"Ha_{self.outfile_name.text()}")
             self.siril.log("Stacking complete.", s.LogColor.GREEN)

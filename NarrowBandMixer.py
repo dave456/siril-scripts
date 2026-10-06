@@ -50,12 +50,12 @@ class NbMixerWindow(QWidget):
         # initialize some member variables
         self.ha_file = ""
         self.oiii_file = ""
-        self.red_ha = 100  # percentage of Ha in red channel
-        self.red_oiii = 0  # percentage of OIII in red channel
-        self.green_ha = 50  # percentage of Ha in green channel
-        self.green_oiii = 50  # percentage of OIII in green channel
-        self.blue_ha = 0  # percentage of Ha in blue channel
-        self.blue_oiii = 100  # percentage of OIII in blue channel
+        # percentage of each component in each output channel (may exceed 100)
+        self.mix = {
+            "red": {"ha": 100, "oiii": 0},
+            "green": {"ha": 50, "oiii": 50},
+            "blue": {"ha": 0, "oiii": 100},
+        }
         
         self.create_widgets()
 
@@ -66,7 +66,8 @@ class NbMixerWindow(QWidget):
 
         # ui constants
         LABEL_WIDTH = 20
-        VALUE_LABEL_WIDTH = 50
+        VALUE_LABEL_WIDTH = 70
+        MAX_PERCENT = 200
 
         # create a box for our columns
         comps_box = QGroupBox(" Components ")
@@ -107,65 +108,26 @@ class NbMixerWindow(QWidget):
         blender_box = QGroupBox(" Mixer ")
         blender_box.setLayout(QVBoxLayout())
 
-        # RED channel mixer
-        red_box = QGroupBox("Red  ")
-        red_box.setLayout(QVBoxLayout())
-        red_box.setFlat(True)
-        blender_box.layout().addWidget(red_box)
+        # one Ha slider and one OIII slider per output channel
+        for channel in ("red", "green", "blue"):
+            box = QGroupBox(f"{channel.capitalize()}  ")
+            box.setLayout(QVBoxLayout())
+            box.setFlat(True)
+            blender_box.layout().addWidget(box)
 
-        red_row = QHBoxLayout()
-        self.red_ha_label = QLabel(f"Ha: {self.red_ha}%")
-        self.red_ha_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        red_row.addWidget(self.red_ha_label)
-        self.red_slider = QSlider(Qt.Orientation.Horizontal)
-        self.red_slider.setRange(0, 100)
-        self.red_slider.setValue(0)
-        red_row.addWidget(self.red_slider)
-        self.red_oiii_label = QLabel(f"OIII: {self.red_oiii}%")
-        self.red_oiii_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        red_row.addWidget(self.red_oiii_label)
-        self.red_slider.valueChanged.connect(self.on_red_slider_changed)
-        red_box.layout().addLayout(red_row)
-
-        # GREEN channel mixer
-        green_box = QGroupBox("Green  ")
-        green_box.setLayout(QVBoxLayout())
-        green_box.setFlat(True)
-        blender_box.layout().addWidget(green_box)
-
-        green_row = QHBoxLayout()
-        self.green_ha_label = QLabel(f"Ha: {self.green_ha}%")
-        self.green_ha_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        green_row.addWidget(self.green_ha_label)
-        self.green_slider = QSlider(Qt.Orientation.Horizontal)
-        self.green_slider.setRange(0, 100)
-        self.green_slider.setValue(50)
-        green_row.addWidget(self.green_slider)
-        self.green_oiii_label = QLabel(f"OIII: {self.green_oiii}%")
-        self.green_oiii_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        green_row.addWidget(self.green_oiii_label)
-        self.green_slider.valueChanged.connect(self.on_green_slider_changed)
-        green_box.layout().addLayout(green_row)
-
-        # BLUE channel mixer
-        blue_box = QGroupBox("Blue  ")
-        blue_box.setLayout(QVBoxLayout())
-        blue_box.setFlat(True)
-        blender_box.layout().addWidget(blue_box)
-
-        blue_row = QHBoxLayout()
-        self.blue_ha_label = QLabel(f"Ha: {self.blue_ha}%")
-        self.blue_ha_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        blue_row.addWidget(self.blue_ha_label)
-        self.blue_slider = QSlider(Qt.Orientation.Horizontal)
-        self.blue_slider.setRange(0, 100)
-        self.blue_slider.setValue(100)
-        blue_row.addWidget(self.blue_slider)
-        self.blue_oiii_label = QLabel(f"OIII: {self.blue_oiii}%")
-        self.blue_oiii_label.setFixedWidth(VALUE_LABEL_WIDTH)
-        blue_row.addWidget(self.blue_oiii_label)
-        self.blue_slider.valueChanged.connect(self.on_blue_slider_changed)
-        blue_box.layout().addLayout(blue_row)
+            for comp, comp_name in (("ha", "Ha"), ("oiii", "OIII")):
+                row = QHBoxLayout()
+                label = QLabel(f"{comp_name}: {self.mix[channel][comp]}%")
+                label.setFixedWidth(VALUE_LABEL_WIDTH)
+                row.addWidget(label)
+                slider = QSlider(Qt.Orientation.Horizontal)
+                slider.setRange(0, MAX_PERCENT)
+                slider.setValue(self.mix[channel][comp])
+                slider.valueChanged.connect(
+                    lambda value, c=channel, k=comp, n=comp_name, lbl=label:
+                        self.on_slider_changed(c, k, n, lbl, value))
+                row.addWidget(slider)
+                box.layout().addLayout(row)
 
         layout.addWidget(blender_box)
         layout.addSpacing(10)
@@ -184,26 +146,10 @@ class NbMixerWindow(QWidget):
             lineedit.setText(os.path.basename(path))
             setattr(self, file_attr, path)
 
-    def on_red_slider_changed(self, value):
-        """ Red channel slider changed """
-        self.red_ha = 100 - value
-        self.red_oiii = value
-        self.red_ha_label.setText(f"Ha: {self.red_ha}%")
-        self.red_oiii_label.setText(f"OIII: {self.red_oiii}%")
-
-    def on_green_slider_changed(self, value):
-        """ Green channel slider changed """
-        self.green_ha = 100 - value
-        self.green_oiii = value
-        self.green_ha_label.setText(f"Ha: {self.green_ha}%")
-        self.green_oiii_label.setText(f"OIII: {self.green_oiii}%")
-
-    def on_blue_slider_changed(self, value):
-        """ Blue channel slider changed """
-        self.blue_ha = 100 - value
-        self.blue_oiii = value
-        self.blue_ha_label.setText(f"Ha: {self.blue_ha}%")
-        self.blue_oiii_label.setText(f"OIII: {self.blue_oiii}%")
+    def on_slider_changed(self, channel, comp, comp_name, label, value):
+        """ Any mixer slider changed """
+        self.mix[channel][comp] = value
+        label.setText(f"{comp_name}: {value}%")
 
     def on_blend(self):
         """ Blend button callback """
@@ -226,18 +172,23 @@ class NbMixerWindow(QWidget):
             #oiii_data = oiii_data * scale
 
             # Create RGB channels
-            red_channel = (self.red_ha / 100) * ha_data + (self.red_oiii / 100) * oiii_data
-            green_channel = (self.green_ha / 100) * ha_data + (self.green_oiii / 100) * oiii_data
-            blue_channel = (self.blue_ha / 100) * ha_data + (self.blue_oiii / 100) * oiii_data
+            channels = [(self.mix[c]["ha"] / 100) * ha_data + (self.mix[c]["oiii"] / 100) * oiii_data
+                        for c in ("red", "green", "blue")]
 
             # Ensure output shape (3, height, width) as Siril expects planes-first format
-            combined_data = np.array([red_channel, green_channel, blue_channel], dtype=np.float32)
+            combined_data = np.array(channels, dtype=np.float32)
+
+            # Clip values to the range [0, 1] to avoid pixels greater than 1.0, this will
+            # likely make the image uglier at these points, but should be obvious and force
+            # the user to adjust the mixer accordingly.
+            np.minimum(combined_data, 1.0, out=combined_data)
 
             # grab the fits header from the Ha file
             with fits.open(self.ha_file) as hdul:
                 header = hdul[0].header
-            header.add_history(f"NarrowBandMixer (Ha/OII) mix: R({self.red_ha}/{self.red_oiii}, "
-                               f"G({self.green_ha}/{self.green_oiii}, B({self.blue_ha}/{self.blue_oiii})))")
+            r, g, b = self.mix["red"], self.mix["green"], self.mix["blue"]
+            header.add_history(f"NarrowBandMixer (Ha/OII) mix: R({r['ha']}%/{r['oiii']}%), "
+                               f"G({g['ha']}%/{g['oiii']}%), B({b['ha']}%/{b['oiii']}%)")
 
             out_name = "NB-Blended.fits"
             hdu = fits.PrimaryHDU(combined_data, header=header)

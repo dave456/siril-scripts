@@ -7,5 +7,11 @@ convert flat -out=../process
 cd ../process
 
 # calibrate flat using our computed synthetic bias
-calibrate flat -bias="=64*$OFFSET"
-stack pp_flat rej 3 3 -norm=mul -out=../masters/flat_stacked
+# calibrate flat -bias="=64*$OFFSET"
+
+# lots of experimentation, decided to use the stacked bias instead of the synthetic one
+calibrate flat -bias=../bias_stacked
+
+stack pp_flat rej 3 3 -norm=mul -out=../flat_stacked
+cd ..
+load flat_stacked
